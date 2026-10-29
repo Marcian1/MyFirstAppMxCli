@@ -1,0 +1,11 @@
+mdl 1;
+
+-- Demo app wiring only. A consuming app adds its own menu item pointing at ResourceMonitor.Dashboard
+-- and maps ResourceMonitor.Admin into one of its own user roles.
+ALTER NAVIGATION Responsive {
+  INSERT AFTER 'Customers' {
+    menu item 'Resource Monitor' ( OnClick: show page ResourceMonitor.Dashboard )
+  }
+};
+
+ALTER USER ROLE Administrator ADD MODULE ROLES (ResourceMonitor.Admin);

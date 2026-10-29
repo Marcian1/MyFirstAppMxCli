@@ -1,0 +1,77 @@
+/**
+ * Resource Monitor smoke and behaviour tests. They run against the real runtime, so the numbers are real:
+ * only properties that must hold on every platform are asserted.
+ */
+
+/**
+ * @test a snapshot reports a running JVM with threads, heap and CPUs
+ * @expect $Snapshot/ThreadCount > 0
+ * @expect $Snapshot/HeapUsedMb > 0
+ * @expect $Snapshot/AvailableProcessors >= 1
+ * @expect $Snapshot/UptimeSeconds >= 0
+ */
+$Snapshot = call microflow ResourceMonitor.SUB_CaptureSnapshot(IncludeStackTraces = false, IncludeJmxMetrics = false);
+/
+
+/**
+ * @test the Mendix runtime and database are identified
+ * @expect $Snapshot/MendixRuntimeVersion != empty
+ * @expect $Snapshot/DbProductName != empty
+ * @expect $Snapshot/DbPingMs >= 0
+ */
+$Snapshot = call microflow ResourceMonitor.SUB_CaptureSnapshot(IncludeStackTraces = false, IncludeJmxMetrics = false);
+/
+
+/**
+ * @test the data storage and web server counters are read from JMX
+ * @expect $Snapshot/DbTransactions >= 0
+ * @expect $Snapshot/WebThreadsMax > 0
+ * @expect $Snapshot/DbPoolMaxTotal > 0
+ */
+$Snapshot = call microflow ResourceMonitor.SUB_CaptureSnapshot(IncludeStackTraces = false, IncludeJmxMetrics = false);
+/
+
+/**
+ * @test every live thread has a sample and stack traces are only kept when asked for
+ * @expect count($WithStacks) > 0
+ * @expect count($Threads) > 0
+ */
+$Snapshot = call microflow ResourceMonitor.SUB_CaptureSnapshot(IncludeStackTraces = false, IncludeJmxMetrics = false);
+retrieve $Threads from $Snapshot/ResourceMonitor.Snapshot_ThreadSample;
+$Deep = call microflow ResourceMonitor.SUB_CaptureSnapshot(IncludeStackTraces = true, IncludeJmxMetrics = false);
+retrieve $WithStacks from $Deep/ResourceMonitor.Snapshot_ThreadSample where StackTrace != empty;
+/
+
+/**
+ * @test memory pools, garbage collectors and system properties are listed, JMX only when requested
+ * @expect count($Pools) > 0
+ * @expect count($Collectors) > 0
+ * @expect count($Props) > 0
+ * @expect count($NoJmx) = 0
+ * @expect count($Jmx) > 0
+ */
+$Snapshot = call microflow ResourceMonitor.SUB_CaptureSnapshot(IncludeStackTraces = false, IncludeJmxMetrics = false);
+retrieve $Pools from $Snapshot/ResourceMonitor.Snapshot_MemoryPoolSample;
+retrieve $Collectors from $Snapshot/ResourceMonitor.Snapshot_GcSample;
+retrieve $Props from $Snapshot/ResourceMonitor.Snapshot_SystemPropertySample;
+retrieve $NoJmx from $Snapshot/ResourceMonitor.Snapshot_MetricSample;
+$WithJmx = call microflow ResourceMonitor.SUB_CaptureSnapshot(IncludeStackTraces = false, IncludeJmxMetrics = true);
+retrieve $Jmx from $WithJmx/ResourceMonitor.Snapshot_MetricSample;
+/
+
+/**
+ * @test refreshing a snapshot replaces its samples instead of piling them up
+ * @expect count($After) = count($Before)
+ */
+$Snapshot = call microflow ResourceMonitor.SUB_CaptureSnapshot(IncludeStackTraces = false, IncludeJmxMetrics = false);
+retrieve $Before from $Snapshot/ResourceMonitor.Snapshot_GcSample;
+$Done = call microflow ResourceMonitor.ACT_Refresh(Snapshot = $Snapshot);
+retrieve $After from $Snapshot/ResourceMonitor.Snapshot_GcSample;
+/
+
+/**
+ * @test the log summary microflow runs
+ * @expect $Done = true
+ */
+$Done = call microflow ResourceMonitor.ACT_LogSnapshot();
+/

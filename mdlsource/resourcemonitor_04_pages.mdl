@@ -1,0 +1,306 @@
+mdl 1;
+
+/** Popup showing one thread's state, lock information and stack trace. */
+create or modify page ResourceMonitor.ThreadSample_Detail
+(
+  params: ( $ThreadSample: ResourceMonitor.ThreadSample ),
+  title: 'Thread',
+  layout: Atlas_Core.PopupLayout
+)
+{
+  dataview dvThread (datasource: $ThreadSample) {
+    textbox tbName (label: 'Name', attribute: Name, editable: Never)
+    layoutgrid gridThread {
+      row {
+        column (desktopwidth: 4) {
+          textbox tbId (label: 'Thread id', attribute: ThreadId, editable: Never)
+          textbox tbState (label: 'State', attribute: State, editable: Never)
+          checkbox cbDaemon (label: 'Daemon', attribute: IsDaemon, editable: Never)
+        }
+        column (desktopwidth: 4) {
+          textbox tbPrio (label: 'Priority', attribute: Priority, editable: Never)
+          textbox tbCpu (label: 'CPU time (ms)', attribute: CpuTimeMs, editable: Never)
+        }
+        column (desktopwidth: 4) {
+          textbox tbBlocked (label: 'Times blocked', attribute: BlockedCount, editable: Never)
+          textbox tbWaited (label: 'Times waited', attribute: WaitedCount, editable: Never)
+        }
+      }
+    }
+    textbox tbLock (label: 'Blocked on lock', attribute: BlockedOnLock, editable: Never)
+    textbox tbOwner (label: 'Lock owner', attribute: LockOwnerName, editable: Never)
+    textarea taStack (label: 'Stack trace', attribute: StackTrace, editable: Never)
+    footer {
+      actionbutton btnClose (caption: 'Close', action: close page)
+    }
+  }
+};
+
+/** The Resource Monitor dashboard: one place to see the application's runtime, JVM, CPU, memory, thread, database and session state. */
+create or modify page ResourceMonitor.Dashboard
+(
+  title: 'Resource Monitor',
+  layout: Atlas_Core.Atlas_Default
+)
+{
+  layoutgrid gridRoot { row { column (desktopwidth: autofill) {
+  dataview dvSnapshot (datasource: microflow ResourceMonitor.DS_Snapshot) {
+    layoutgrid gridHeader {
+      row {
+        column (desktopwidth: 8) {
+          dynamictext txtTitle (content: 'Resource Monitor', rendermode: H2)
+          dynamictext txtCaptured (content: 'Captured {1} in {2} ms. Values are a point in time; press Refresh to capture again.', contentparams: ({1} = CapturedAt, {2} = CaptureDurationMs))
+        }
+        column (desktopwidth: 4) {
+          actionbutton btnRefresh (caption: 'Refresh', action: call microflow ResourceMonitor.ACT_Refresh(Snapshot = $currentObject), buttonstyle: primary, icon: 'Atlas_Core.Atlas_Filled.refresh')
+        }
+      }
+    }
+
+    tabcontainer tabs {
+      tabpage tabOverview (caption: 'Overview') {
+        layoutgrid gridOverview {
+          row {
+            column (desktopwidth: 4) {
+              groupbox gbRuntime (caption: 'Mendix runtime') {
+                textbox tbRtVersion (label: 'Runtime version', attribute: MendixRuntimeVersion, editable: Never)
+                textbox tbRootUrl (label: 'Application root URL', attribute: ApplicationRootUrl, editable: Never)
+                textbox tbSessions (label: 'Active sessions', attribute: ActiveSessions, editable: Never)
+                textbox tbNamed (label: 'Distinct signed-in users', attribute: NamedUsersConcurrent, editable: Never)
+                textbox tbAnon (label: 'Anonymous sessions', attribute: AnonymousSessions, editable: Never)
+                textbox tbMaxUsers (label: 'Licensed max concurrent users', attribute: MaxConcurrentUsers, editable: Never)
+              }
+              groupbox gbWeb (caption: 'Web server (Jetty)') {
+                textbox tbWebThreads (label: 'Pool threads', attribute: WebThreadsTotal, editable: Never)
+                textbox tbWebIdle (label: 'Idle threads', attribute: WebThreadsIdle, editable: Never)
+                textbox tbWebMax (label: 'Max threads', attribute: WebThreadsMax, editable: Never)
+                textbox tbWebQueue (label: 'Queued requests', attribute: WebQueueSize, editable: Never)
+                textbox tbWebEndpoints (label: 'Connected endpoints', attribute: WebConnectedEndPoints, editable: Never)
+              }
+              groupbox gbJvm (caption: 'JVM') {
+                textbox tbJvm (label: 'JVM', attribute: JvmName, editable: Never)
+                textbox tbJavaVer (label: 'Java version', attribute: JavaVersion, editable: Never)
+                textbox tbJavaVendor (label: 'Vendor', attribute: JavaVendor, editable: Never)
+                datepicker dpStarted (label: 'Started at', attribute: JvmStartedAt, DateFormat: DateTime, editable: Never)
+                textbox tbUptime (label: 'Uptime (seconds)', attribute: UptimeSeconds, editable: Never)
+              }
+            }
+            column (desktopwidth: 4) {
+              groupbox gbCpu (caption: 'CPU and operating system') {
+                textbox tbProcCpu (label: 'Process CPU load (%)', attribute: ProcessCpuLoadPercent, editable: Never)
+                textbox tbSysCpu (label: 'System CPU load (%)', attribute: SystemCpuLoadPercent, editable: Never)
+                textbox tbLoadAvg (label: 'System load average (1 min)', attribute: SystemLoadAverage, editable: Never)
+                textbox tbCpus (label: 'Available processors', attribute: AvailableProcessors, editable: Never)
+                textbox tbCpuTime (label: 'Process CPU time (ms)', attribute: ProcessCpuTimeMs, editable: Never)
+                textbox tbOs (label: 'Operating system', attribute: OsName, editable: Never)
+                textbox tbOsVer (label: 'OS version', attribute: OsVersion, editable: Never)
+                textbox tbArch (label: 'Architecture', attribute: OsArch, editable: Never)
+                textbox tbFdOpen (label: 'Open file descriptors', attribute: OpenFileDescriptors, editable: Never)
+                textbox tbFdMax (label: 'Max file descriptors', attribute: MaxFileDescriptors, editable: Never)
+              }
+            }
+            column (desktopwidth: 4) {
+              groupbox gbMemory (caption: 'Memory (MB)') {
+                textbox tbHeapUsed (label: 'Heap used', attribute: HeapUsedMb, editable: Never)
+                textbox tbHeapCommitted (label: 'Heap committed', attribute: HeapCommittedMb, editable: Never)
+                textbox tbHeapMax (label: 'Heap max', attribute: HeapMaxMb, editable: Never)
+                textbox tbNonHeap (label: 'Non-heap used', attribute: NonHeapUsedMb, editable: Never)
+                textbox tbNonHeapC (label: 'Non-heap committed', attribute: NonHeapCommittedMb, editable: Never)
+                textbox tbPhysTotal (label: 'Physical memory total', attribute: PhysicalMemoryTotalMb, editable: Never)
+                textbox tbPhysFree (label: 'Physical memory free', attribute: PhysicalMemoryFreeMb, editable: Never)
+                textbox tbSwapTotal (label: 'Swap total', attribute: SwapTotalMb, editable: Never)
+                textbox tbSwapFree (label: 'Swap free', attribute: SwapFreeMb, editable: Never)
+                textbox tbDiskTotal (label: 'Disk total (working directory)', attribute: DiskTotalMb, editable: Never)
+                textbox tbDiskFree (label: 'Disk free (working directory)', attribute: DiskFreeMb, editable: Never)
+              }
+            }
+          }
+        }
+        textarea taArgs (label: 'JVM arguments (secrets masked)', attribute: JvmArguments, editable: Never)
+      }
+
+      tabpage tabThreads (caption: 'Threads') {
+        layoutgrid gridThreadSummary {
+          row {
+            column (desktopwidth: 3) {
+              textbox tbThreads (label: 'Live threads', attribute: ThreadCount, editable: Never)
+            }
+            column (desktopwidth: 3) {
+              textbox tbPeak (label: 'Peak', attribute: PeakThreadCount, editable: Never)
+            }
+            column (desktopwidth: 3) {
+              textbox tbDaemon (label: 'Daemon', attribute: DaemonThreadCount, editable: Never)
+            }
+            column (desktopwidth: 3) {
+              textbox tbDead (label: 'Deadlocked', attribute: DeadlockedThreadCount, editable: Never)
+            }
+          }
+        }
+        textarea taDead (label: 'Deadlocked threads', attribute: DeadlockedThreads, editable: Never, visible: $currentObject/DeadlockedThreadCount > 0)
+        datagrid gridThreads (datasource: $currentObject/ResourceMonitor.Snapshot_ThreadSample, PagingPosition: both, PageSize: 25) {
+          column (attribute: ThreadId, caption: 'Id') {
+            numberfilter nfThreadId
+          }
+          column (attribute: Name, caption: 'Name') {
+            textfilter tfThreadName
+          }
+          column (attribute: State, caption: 'State') {
+            textfilter tfThreadState
+          }
+          column (attribute: CpuTimeMs, caption: 'CPU ms') {
+            numberfilter nfCpu
+          }
+          column (attribute: BlockedCount, caption: 'Blocked') {
+            numberfilter nfBlocked
+          }
+          column (attribute: WaitedCount, caption: 'Waited') {
+            numberfilter nfWaited
+          }
+          column (attribute: BlockedOnLock, caption: 'Blocked on') {
+            textfilter tfLock
+          }
+          column (attribute: TopFrame, caption: 'Top frame') {
+            textfilter tfTop
+          }
+          column (caption: 'Details') {
+            actionbutton btnStack (caption: 'Stack', action: show page ResourceMonitor.ThreadSample_Detail(ThreadSample = $currentObject))
+          }
+        }
+      }
+
+      tabpage tabMemory (caption: 'Memory and GC') {
+        dynamictext txtPools (content: 'Memory pools', rendermode: H4)
+        datagrid gridPools (datasource: $currentObject/ResourceMonitor.Snapshot_MemoryPoolSample, PagingPosition: both) {
+          column (attribute: Name, caption: 'Pool') {
+            textfilter tfPool
+          }
+          column (attribute: PoolType, caption: 'Type') {
+            textfilter tfPoolType
+          }
+          column (attribute: UsedMb, caption: 'Used (MB)') {
+            numberfilter nfUsed
+          }
+          column (attribute: CommittedMb, caption: 'Committed (MB)') {
+            numberfilter nfCommitted
+          }
+          column (attribute: MaxMb, caption: 'Max (MB)') {
+            numberfilter nfMax
+          }
+          column (attribute: PeakUsedMb, caption: 'Peak used (MB)') {
+            numberfilter nfPeak
+          }
+          column (attribute: UsedPercentOfMax, caption: 'Used % of max') {
+            numberfilter nfPct
+          }
+        }
+        dynamictext txtGc (content: 'Garbage collectors', rendermode: H4)
+        layoutgrid gridGcSummary {
+          row {
+            column (desktopwidth: 4) {
+              textbox tbGcCount (label: 'Total collections', attribute: GcCollectionCount, editable: Never)
+            }
+            column (desktopwidth: 4) {
+              textbox tbGcTime (label: 'Total GC time (ms)', attribute: GcCollectionTimeMs, editable: Never)
+            }
+            column (desktopwidth: 4) {
+              textbox tbClasses (label: 'Loaded classes', attribute: LoadedClassCount, editable: Never)
+            }
+          }
+        }
+        datagrid gridGc (datasource: $currentObject/ResourceMonitor.Snapshot_GcSample) {
+          column (attribute: Name, caption: 'Collector')
+          column (attribute: CollectionCount, caption: 'Collections')
+          column (attribute: CollectionTimeMs, caption: 'Time (ms)')
+          column (attribute: MemoryPools, caption: 'Memory pools')
+        }
+      }
+
+      tabpage tabDatabase (caption: 'Database') {
+        textbox tbDbProduct (label: 'Product', attribute: DbProductName, editable: Never)
+        textbox tbDbVersion (label: 'Version', attribute: DbProductVersion, editable: Never)
+        textbox tbDbDriver (label: 'JDBC driver', attribute: DbDriverName, editable: Never)
+        textbox tbDbDriverVer (label: 'Driver version', attribute: DbDriverVersion, editable: Never)
+        textbox tbDbUrl (label: 'URL (secrets masked)', attribute: DbUrl, editable: Never)
+        textbox tbDbUser (label: 'User', attribute: DbUserName, editable: Never)
+        textbox tbDbIso (label: 'Transaction isolation', attribute: DbTransactionIsolation, editable: Never)
+        textbox tbDbPing (label: 'Connection validity check (ms)', attribute: DbPingMs, editable: Never)
+        textbox tbDbError (label: 'Error', attribute: DbError, editable: Never, visible: $currentObject/DbError != empty)
+        layoutgrid gridDbExtra {
+          row {
+            column (desktopwidth: 6) {
+              groupbox gbPool (caption: 'Connection pool') {
+                textbox tbPoolActive (label: 'Active connections', attribute: DbPoolActive, editable: Never)
+                textbox tbPoolIdle (label: 'Idle connections', attribute: DbPoolIdle, editable: Never)
+                textbox tbPoolMax (label: 'Max connections', attribute: DbPoolMaxTotal, editable: Never)
+                textbox tbPoolWaiters (label: 'Threads waiting for a connection', attribute: DbPoolWaiters, editable: Never)
+                textbox tbPoolBorrowed (label: 'Connections borrowed since start', attribute: DbPoolBorrowedTotal, editable: Never)
+                textbox tbPoolMaxWait (label: 'Longest wait for a connection (ms)', attribute: DbPoolMaxBorrowWaitMs, editable: Never)
+              }
+            }
+            column (desktopwidth: 6) {
+              groupbox gbStorage (caption: 'Data storage activity since start') {
+                textbox tbSelects (label: 'Selects', attribute: DbSelects, editable: Never)
+                textbox tbInserts (label: 'Inserts', attribute: DbInserts, editable: Never)
+                textbox tbUpdates (label: 'Updates', attribute: DbUpdates, editable: Never)
+                textbox tbDeletes (label: 'Deletes', attribute: DbDeletes, editable: Never)
+                textbox tbTx (label: 'Transactions', attribute: DbTransactions, editable: Never)
+                textbox tbEntities (label: 'Entities in the model', attribute: EntityCount, editable: Never)
+              }
+            }
+          }
+        }
+        dynamictext txtDbHint (content: 'Every pool and counter the runtime publishes over JMX is listed in full on the JMX metrics tab.')
+      }
+
+      tabpage tabSessions (caption: 'Sessions') {
+        datagrid gridSessions (datasource: $currentObject/ResourceMonitor.Snapshot_SessionSample, PagingPosition: both) {
+          column (attribute: UserName, caption: 'User') {
+            textfilter tfUser
+          }
+          column (attribute: LastActive, caption: 'Last active') {
+            datefilter dfActive
+          }
+          column (attribute: Roles, caption: 'Roles') {
+            textfilter tfRoles
+          }
+          column (attribute: UserAgent, caption: 'User agent') {
+            textfilter tfAgent
+          }
+        }
+      }
+
+      tabpage tabJmx (caption: 'JMX metrics') {
+        dynamictext txtJmx (content: 'Connection pools, web server thread pools, buffer pools and caches that publish JMX attributes. Which ones appear depends on the runtime and database in use.')
+        datagrid gridJmx (datasource: $currentObject/ResourceMonitor.Snapshot_MetricSample, PagingPosition: both, PageSize: 25) {
+          column (attribute: Category, caption: 'Domain') {
+            textfilter tfJmxCat
+          }
+          column (attribute: Source, caption: 'MBean') {
+            textfilter tfJmxSrc
+          }
+          column (attribute: Name, caption: 'Attribute') {
+            textfilter tfJmxName
+          }
+          column (attribute: TextValue, caption: 'Value') {
+            textfilter tfJmxVal
+          }
+        }
+      }
+
+      tabpage tabProps (caption: 'System properties') {
+        datagrid gridProps (datasource: $currentObject/ResourceMonitor.Snapshot_SystemPropertySample, PagingPosition: both, PageSize: 25) {
+          column (attribute: Name, caption: 'Property') {
+            textfilter tfPropName
+          }
+          column (attribute: Value, caption: 'Value') {
+            textfilter tfPropVal
+          }
+        }
+      }
+    }
+  }
+  } } }
+};
+
+GRANT VIEW ON PAGE ResourceMonitor.Dashboard TO ResourceMonitor.Admin;
+GRANT VIEW ON PAGE ResourceMonitor.ThreadSample_Detail TO ResourceMonitor.Admin;

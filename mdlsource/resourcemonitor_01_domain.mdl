@@ -1,0 +1,184 @@
+mdl 1;
+
+CREATE MODULE IF NOT EXISTS ResourceMonitor;
+
+CREATE OR MODIFY MODULE ROLE ResourceMonitor.Admin DESCRIPTION 'May open the Resource Monitor dashboard and read runtime, JVM, thread, memory and database information';
+
+-- One capture of the whole application's resource state. The child lists hang off it by reference sets,
+-- so a single Snapshot object can be re-filled in place by JA_Capture and a page bound to it refreshes.
+/** A point-in-time capture of runtime, JVM, OS, thread and database information. */
+CREATE OR MODIFY NON-PERSISTENT ENTITY ResourceMonitor.Snapshot (
+  CapturedAt: DateTime,
+  CaptureDurationMs: Long,
+
+  /** Application and runtime */
+  MendixRuntimeVersion: String(100),
+  ApplicationRootUrl: String(500),
+  ActiveSessions: Long,
+  NamedUsersConcurrent: Long,
+  AnonymousSessions: Long,
+  MaxConcurrentUsers: Long,
+
+  /** JVM */
+  JvmName: String(300),
+  JavaVersion: String(100),
+  JavaVendor: String(300),
+  JvmStartedAt: DateTime,
+  UptimeSeconds: Long,
+  JvmArguments: String(0),
+
+  /** Operating system and CPU */
+  OsName: String(200),
+  OsVersion: String(200),
+  OsArch: String(100),
+  AvailableProcessors: Long,
+  SystemLoadAverage: Decimal,
+  ProcessCpuLoadPercent: Decimal,
+  SystemCpuLoadPercent: Decimal,
+  ProcessCpuTimeMs: Long,
+  OpenFileDescriptors: Long,
+  MaxFileDescriptors: Long,
+
+  /** Memory (megabytes) */
+  HeapUsedMb: Long,
+  HeapCommittedMb: Long,
+  HeapMaxMb: Long,
+  NonHeapUsedMb: Long,
+  NonHeapCommittedMb: Long,
+  PhysicalMemoryTotalMb: Long,
+  PhysicalMemoryFreeMb: Long,
+  SwapTotalMb: Long,
+  SwapFreeMb: Long,
+  DiskTotalMb: Long,
+  DiskFreeMb: Long,
+
+  /** Threads, classes and garbage collection */
+  ThreadCount: Long,
+  DaemonThreadCount: Long,
+  PeakThreadCount: Long,
+  TotalStartedThreadCount: Long,
+  DeadlockedThreadCount: Long,
+  DeadlockedThreads: String(0),
+  LoadedClassCount: Long,
+  TotalLoadedClassCount: Long,
+  UnloadedClassCount: Long,
+  GcCollectionCount: Long,
+  GcCollectionTimeMs: Long,
+
+  /** Database */
+  DbProductName: String(200),
+  DbProductVersion: String(300),
+  DbDriverName: String(200),
+  DbDriverVersion: String(200),
+  DbUrl: String(500),
+  DbUserName: String(200),
+  DbTransactionIsolation: String(100),
+  DbPingMs: Decimal,
+  DbError: String(1000),
+
+  /** Database connection pool (Apache DBCP, via JMX) */
+  DbPoolActive: Long,
+  DbPoolIdle: Long,
+  DbPoolMaxTotal: Long,
+  DbPoolWaiters: Long,
+  DbPoolBorrowedTotal: Long,
+  DbPoolMaxBorrowWaitMs: Long,
+
+  /** Mendix data storage activity since the runtime started */
+  DbSelects: Long,
+  DbInserts: Long,
+  DbUpdates: Long,
+  DbDeletes: Long,
+  DbTransactions: Long,
+  EntityCount: Long,
+
+  /** Web server (Jetty, via JMX) */
+  WebThreadsTotal: Long,
+  WebThreadsIdle: Long,
+  WebThreadsMax: Long,
+  WebQueueSize: Long,
+  WebConnectedEndPoints: Long
+);
+
+/** One JVM thread at the moment of capture. */
+CREATE OR MODIFY NON-PERSISTENT ENTITY ResourceMonitor.ThreadSample (
+  ThreadId: Long,
+  Name: String(500),
+  State: String(50),
+  IsDaemon: Boolean DEFAULT false,
+  Priority: Long,
+  CpuTimeMs: Long,
+  BlockedCount: Long,
+  WaitedCount: Long,
+  BlockedOnLock: String(500),
+  LockOwnerName: String(500),
+  TopFrame: String(1000),
+  StackTrace: String(0)
+);
+
+/** A JVM memory pool (heap generation, metaspace, code cache ...). */
+CREATE OR MODIFY NON-PERSISTENT ENTITY ResourceMonitor.MemoryPoolSample (
+  Name: String(200),
+  PoolType: String(50),
+  UsedMb: Decimal,
+  CommittedMb: Decimal,
+  MaxMb: Decimal,
+  PeakUsedMb: Decimal,
+  UsedPercentOfMax: Decimal
+);
+
+/** A JVM garbage collector. */
+CREATE OR MODIFY NON-PERSISTENT ENTITY ResourceMonitor.GcSample (
+  Name: String(200),
+  CollectionCount: Long,
+  CollectionTimeMs: Long,
+  MemoryPools: String(1000)
+);
+
+/** A user session known to the Mendix runtime. */
+CREATE OR MODIFY NON-PERSISTENT ENTITY ResourceMonitor.SessionSample (
+  UserName: String(200),
+  LastActive: DateTime,
+  UserAgent: String(1000),
+  Roles: String(1000),
+  IsAnonymous: Boolean DEFAULT false
+);
+
+/** Any other numeric or text metric found through JMX: connection pools, web server thread pools, caches. */
+CREATE OR MODIFY NON-PERSISTENT ENTITY ResourceMonitor.MetricSample (
+  Category: String(200),
+  Source: String(500),
+  Name: String(200),
+  TextValue: String(2000),
+  NumericValue: Decimal,
+  IsNumeric: Boolean DEFAULT false
+);
+
+/** A JVM system property, with the value masked when the name looks like a secret. */
+CREATE OR MODIFY NON-PERSISTENT ENTITY ResourceMonitor.SystemPropertySample (
+  Name: String(500),
+  Value: String(0),
+  IsMasked: Boolean DEFAULT false
+);
+
+CREATE OR MODIFY ASSOCIATION ResourceMonitor.Snapshot_ThreadSample
+  FROM ResourceMonitor.Snapshot TO ResourceMonitor.ThreadSample TYPE ReferenceSet;
+CREATE OR MODIFY ASSOCIATION ResourceMonitor.Snapshot_MemoryPoolSample
+  FROM ResourceMonitor.Snapshot TO ResourceMonitor.MemoryPoolSample TYPE ReferenceSet;
+CREATE OR MODIFY ASSOCIATION ResourceMonitor.Snapshot_GcSample
+  FROM ResourceMonitor.Snapshot TO ResourceMonitor.GcSample TYPE ReferenceSet;
+CREATE OR MODIFY ASSOCIATION ResourceMonitor.Snapshot_SessionSample
+  FROM ResourceMonitor.Snapshot TO ResourceMonitor.SessionSample TYPE ReferenceSet;
+CREATE OR MODIFY ASSOCIATION ResourceMonitor.Snapshot_MetricSample
+  FROM ResourceMonitor.Snapshot TO ResourceMonitor.MetricSample TYPE ReferenceSet;
+CREATE OR MODIFY ASSOCIATION ResourceMonitor.Snapshot_SystemPropertySample
+  FROM ResourceMonitor.Snapshot TO ResourceMonitor.SystemPropertySample TYPE ReferenceSet;
+
+GRANT READ *, WRITE * ON ENTITY ResourceMonitor.Snapshot TO ResourceMonitor.Admin;
+GRANT CREATE, READ *, WRITE * ON ENTITY ResourceMonitor.ThreadSample TO ResourceMonitor.Admin;
+GRANT CREATE, READ *, WRITE * ON ENTITY ResourceMonitor.MemoryPoolSample TO ResourceMonitor.Admin;
+GRANT CREATE, READ *, WRITE * ON ENTITY ResourceMonitor.GcSample TO ResourceMonitor.Admin;
+GRANT CREATE, READ *, WRITE * ON ENTITY ResourceMonitor.SessionSample TO ResourceMonitor.Admin;
+GRANT CREATE, READ *, WRITE * ON ENTITY ResourceMonitor.MetricSample TO ResourceMonitor.Admin;
+GRANT CREATE, READ *, WRITE * ON ENTITY ResourceMonitor.SystemPropertySample TO ResourceMonitor.Admin;
+GRANT CREATE, DELETE ON ENTITY ResourceMonitor.Snapshot TO ResourceMonitor.Admin;

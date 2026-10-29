@@ -1,0 +1,48 @@
+mdl 1;
+
+/** Public API. Captures a fresh snapshot of runtime, JVM, OS/CPU, memory, threads, GC, sessions, database and JMX metrics.
+ *  Call it from your own microflows, e.g. a scheduled event, and read the returned Snapshot and its child lists. */
+create or modify microflow ResourceMonitor.SUB_CaptureSnapshot(
+  $IncludeStackTraces: Boolean,
+  $IncludeJmxMetrics: Boolean
+) returns ResourceMonitor.Snapshot as $Snapshot
+begin
+  $Snapshot = create ResourceMonitor.Snapshot ();
+  $Captured = call java action ResourceMonitor.JA_Capture(
+    Snapshot = $Snapshot,
+    IncludeStackTraces = $IncludeStackTraces,
+    IncludeJmxMetrics = $IncludeJmxMetrics
+  );
+  return $Snapshot;
+end;
+
+/** Data source of the dashboard page: a fresh snapshot including stack traces and JMX metrics. */
+create or modify microflow ResourceMonitor.DS_Snapshot() returns ResourceMonitor.Snapshot as $Snapshot
+begin
+  $Snapshot = call microflow ResourceMonitor.SUB_CaptureSnapshot(IncludeStackTraces = true, IncludeJmxMetrics = true);
+  return $Snapshot;
+end;
+
+/** Refreshes the snapshot shown on the dashboard in place. */
+create or modify microflow ResourceMonitor.ACT_Refresh($Snapshot: ResourceMonitor.Snapshot) returns Boolean as $Done
+begin
+  $Captured = call java action ResourceMonitor.JA_Capture(
+    Snapshot = $Snapshot,
+    IncludeStackTraces = true,
+    IncludeJmxMetrics = true
+  );
+  return true;
+end;
+
+/** Writes a one-line summary of the key resource numbers to the log node ResourceMonitor. Suitable for a scheduled event. */
+create or modify microflow ResourceMonitor.ACT_LogSnapshot() returns Boolean as $Done
+begin
+  $Snapshot = call microflow ResourceMonitor.SUB_CaptureSnapshot(IncludeStackTraces = false, IncludeJmxMetrics = false);
+  log info node 'ResourceMonitor' 'heap ' + toString($Snapshot/HeapUsedMb) + '/' + toString($Snapshot/HeapMaxMb) + ' MB, threads ' + toString($Snapshot/ThreadCount) + ', sessions ' + toString($Snapshot/ActiveSessions) + ', db ping ' + toString($Snapshot/DbPingMs) + ' ms, deadlocked ' + toString($Snapshot/DeadlockedThreadCount);
+  return true;
+end;
+
+GRANT EXECUTE ON MICROFLOW ResourceMonitor.SUB_CaptureSnapshot TO ResourceMonitor.Admin;
+GRANT EXECUTE ON MICROFLOW ResourceMonitor.DS_Snapshot TO ResourceMonitor.Admin;
+GRANT EXECUTE ON MICROFLOW ResourceMonitor.ACT_Refresh TO ResourceMonitor.Admin;
+GRANT EXECUTE ON MICROFLOW ResourceMonitor.ACT_LogSnapshot TO ResourceMonitor.Admin;
