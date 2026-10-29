@@ -1,0 +1,7 @@
+mdl 1;
+
+-- Users may create, read, edit and delete customers
+GRANT CREATE, DELETE, READ *, WRITE * ON ENTITY MyFirstModule.Customer TO MyFirstModule.User;
+
+GRANT VIEW ON PAGE MyFirstModule.Customer_Overview TO MyFirstModule.User;
+GRANT VIEW ON PAGE MyFirstModule.Customer_NewEdit TO MyFirstModule.User;
