@@ -1,0 +1,46 @@
+mdl 1;
+
+/** History store: what is kept, a manual collection, and demo data for trying the charts. */
+create or modify page ResourceMonitor.History
+(
+  title: 'Resource Monitor history',
+  layout: Atlas_Core.Atlas_Default
+)
+{
+  layoutgrid gridRoot {
+    row {
+      column (desktopwidth: autofill) {
+        dataview dvStatus (datasource: microflow ResourceMonitor.DS_HistoryStatus) {
+          dynamictext txtTitle (content: 'History', rendermode: H2)
+          dynamictext txtExplain (content: 'The collector stores one sample per minute. Samples older than the retention period are deleted automatically. Demo data is synthetic, flagged, and only for trying the charts.')
+          layoutgrid gridStatus {
+            row {
+              column (desktopwidth: 4) {
+                textbox tbTotal (label: 'Samples stored', attribute: TotalPoints, editable: Never)
+                textbox tbDemo (label: 'Of which demo samples', attribute: DemoPoints, editable: Never)
+              }
+              column (desktopwidth: 4) {
+                datepicker dpOldest (label: 'Oldest sample', attribute: OldestPoint, DateFormat: DateTime, editable: Never)
+                datepicker dpNewest (label: 'Newest sample', attribute: NewestPoint, DateFormat: DateTime, editable: Never)
+              }
+              column (desktopwidth: 4) {
+                textbox tbRetention (label: 'Retention (days), constant ResourceMonitor.RetentionDays', attribute: RetentionDays, editable: Never)
+                checkbox cbEnabled (label: 'Collection enabled, constant ResourceMonitor.CollectionEnabled', attribute: CollectionEnabled, editable: Never)
+              }
+            }
+          }
+          dynamictext txtMessage (content: '{1}', contentparams: ({1} = Message))
+          container ctnButtons {
+            actionbutton btnCollect (caption: 'Store a sample now', action: call microflow ResourceMonitor.ACT_CollectNow(Status = $currentObject))
+            actionbutton btnDemo (caption: 'Generate demo history', action: call microflow ResourceMonitor.ACT_GenerateDemoHistory(Status = $currentObject), buttonstyle: primary)
+            actionbutton btnDelDemo (caption: 'Delete demo history', action: call microflow ResourceMonitor.ACT_DeleteDemoHistory(Status = $currentObject))
+            actionbutton btnDelAll (caption: 'Delete all history', action: call microflow ResourceMonitor.ACT_DeleteAllHistory(Status = $currentObject), buttonstyle: danger)
+            actionbutton btnBack (caption: 'Back to dashboard', action: show page ResourceMonitor.Dashboard)
+          }
+        }
+      }
+    }
+  }
+};
+
+GRANT VIEW ON PAGE ResourceMonitor.History TO ResourceMonitor.Admin;

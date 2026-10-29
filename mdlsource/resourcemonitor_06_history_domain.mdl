@@ -1,0 +1,126 @@
+mdl 1;
+
+/** How many days of per-minute history are kept. Older samples are deleted by the collector. */
+CREATE OR MODIFY CONSTANT ResourceMonitor.RetentionDays (
+  Type: Integer,
+  DefaultValue: 14
+);
+
+/** Switches the per-minute collector on or off without removing the scheduled event. */
+CREATE OR MODIFY CONSTANT ResourceMonitor.CollectionEnabled (
+  Type: Boolean,
+  DefaultValue: true
+);
+
+CREATE ENUMERATION IF NOT EXISTS ResourceMonitor.ChartRange (
+  Last1h 'Last 1 hour',
+  Last6h 'Last 6 hours',
+  Last24h 'Last 24 hours',
+  Last3d 'Last 3 days',
+  Last7d 'Last 7 days',
+  Last14d 'Last 14 days'
+);
+
+-- One row per minute. Gauges are the value at that minute; the *Total columns are the runtime's counters
+-- since it started, from which per-minute rates are derived when a chart is built.
+/** One per-minute sample of the application's resource state. */
+CREATE OR MODIFY PERSISTENT ENTITY ResourceMonitor.ResourcePoint (
+  Timestamp: DateTime NOT NULL,
+  IsDemo: Boolean DEFAULT false,
+
+  ProcessCpuPct: Decimal,
+  SystemCpuPct: Decimal,
+
+  HeapUsedMb: Long,
+  HeapCommittedMb: Long,
+  HeapMaxMb: Long,
+  NonHeapUsedMb: Long,
+  PhysicalFreeMb: Long,
+  LoadedClasses: Long,
+
+  Threads: Long,
+  DaemonThreads: Long,
+  DeadlockedThreads: Long,
+  WebThreads: Long,
+  WebIdleThreads: Long,
+  WebQueue: Long,
+
+  PoolActive: Long,
+  PoolIdle: Long,
+  PoolWaiters: Long,
+  DbPingMs: Decimal,
+  Sessions: Long,
+
+  GcCountTotal: Long,
+  GcTimeMsTotal: Long,
+  SelectsTotal: Long,
+  InsertsTotal: Long,
+  UpdatesTotal: Long,
+  DeletesTotal: Long,
+  TransactionsTotal: Long
+)
+INDEX (Timestamp);
+
+/** One point of a chart: the samples of one time bucket, averaged (gauges) or turned into a per-minute rate (counters). */
+CREATE OR MODIFY NON-PERSISTENT ENTITY ResourceMonitor.ChartPoint (
+  Timestamp: DateTime,
+  ProcessCpuAvg: Decimal,
+  ProcessCpuMax: Decimal,
+  SystemCpuAvg: Decimal,
+  HeapUsedMb: Decimal,
+  HeapUsedMaxMb: Decimal,
+  HeapCommittedMb: Decimal,
+  HeapMaxMb: Decimal,
+  NonHeapUsedMb: Decimal,
+  PhysicalFreeMb: Decimal,
+  Threads: Decimal,
+  ThreadsMax: Decimal,
+  DaemonThreads: Decimal,
+  WebThreads: Decimal,
+  WebBusyThreads: Decimal,
+  WebQueue: Decimal,
+  PoolActive: Decimal,
+  PoolActiveMax: Decimal,
+  PoolIdle: Decimal,
+  PoolWaiters: Decimal,
+  DbPingMs: Decimal,
+  Sessions: Decimal,
+  SessionsMax: Decimal,
+  GcCountPerMin: Decimal,
+  GcTimeMsPerMin: Decimal,
+  SelectsPerMin: Decimal,
+  InsertsPerMin: Decimal,
+  UpdatesPerMin: Decimal,
+  DeletesPerMin: Decimal,
+  TransactionsPerMin: Decimal
+);
+
+/** What the history store currently holds. */
+CREATE OR MODIFY NON-PERSISTENT ENTITY ResourceMonitor.HistoryStatus (
+  TotalPoints: Long,
+  DemoPoints: Long,
+  OldestPoint: DateTime,
+  NewestPoint: DateTime,
+  RetentionDays: Long,
+  CollectionEnabled: Boolean,
+  Message: String(500)
+);
+
+ALTER ENTITY ResourceMonitor.Snapshot ADD ATTRIBUTE IF NOT EXISTS Range: Enumeration(ResourceMonitor.ChartRange) DEFAULT ResourceMonitor.ChartRange.Last24h;
+ALTER ENTITY ResourceMonitor.Snapshot ADD ATTRIBUTE IF NOT EXISTS BucketMinutes: Long;
+ALTER ENTITY ResourceMonitor.Snapshot ADD ATTRIBUTE IF NOT EXISTS HistoryFrom: DateTime;
+ALTER ENTITY ResourceMonitor.Snapshot ADD ATTRIBUTE IF NOT EXISTS HistoryTo: DateTime;
+ALTER ENTITY ResourceMonitor.Snapshot ADD ATTRIBUTE IF NOT EXISTS HistorySamples: Long;
+ALTER ENTITY ResourceMonitor.Snapshot ADD ATTRIBUTE IF NOT EXISTS HistoryNote: String(500);
+ALTER ENTITY ResourceMonitor.Snapshot ADD ATTRIBUTE IF NOT EXISTS FullDetail: Boolean DEFAULT false;
+
+CREATE OR MODIFY ASSOCIATION ResourceMonitor.Snapshot_ChartPoint
+  FROM ResourceMonitor.Snapshot TO ResourceMonitor.ChartPoint TYPE ReferenceSet;
+
+GRANT CREATE, DELETE, READ *, WRITE * ON ENTITY ResourceMonitor.ResourcePoint TO ResourceMonitor.Admin;
+GRANT CREATE, READ *, WRITE * ON ENTITY ResourceMonitor.ChartPoint TO ResourceMonitor.Admin;
+GRANT CREATE, READ *, WRITE * ON ENTITY ResourceMonitor.HistoryStatus TO ResourceMonitor.Admin;
+
+ALTER ENUMERATION ResourceMonitor.ChartRange ADD VALUE IF NOT EXISTS Custom CAPTION 'Custom period';
+ALTER ENTITY ResourceMonitor.Snapshot ADD ATTRIBUTE IF NOT EXISTS CustomFrom: DateTime;
+ALTER ENTITY ResourceMonitor.Snapshot ADD ATTRIBUTE IF NOT EXISTS CustomTo: DateTime;

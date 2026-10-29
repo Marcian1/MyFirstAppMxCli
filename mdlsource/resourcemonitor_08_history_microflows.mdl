@@ -1,0 +1,180 @@
+mdl 1;
+
+/** Minutes covered by a chart range. */
+create or modify microflow ResourceMonitor.SUB_RangeMinutes($Range: ResourceMonitor.ChartRange) returns Integer as $Minutes
+begin
+  declare $Minutes integer = 1440;
+  if $Range = ResourceMonitor.ChartRange.Last1h then
+    set $Minutes = 60;
+  end if;
+  if $Range = ResourceMonitor.ChartRange.Last6h then
+    set $Minutes = 360;
+  end if;
+  if $Range = ResourceMonitor.ChartRange.Last24h then
+    set $Minutes = 1440;
+  end if;
+  if $Range = ResourceMonitor.ChartRange.Last3d then
+    set $Minutes = 4320;
+  end if;
+  if $Range = ResourceMonitor.ChartRange.Last7d then
+    set $Minutes = 10080;
+  end if;
+  if $Range = ResourceMonitor.ChartRange.Last14d then
+    set $Minutes = 20160;
+  end if;
+  return $Minutes;
+end;
+
+/** Rebuilds the snapshot's chart points for the period it has selected: a preset range ending now, or the custom From/To period. */
+drop microflow if exists ResourceMonitor.SUB_LoadHistory;
+create microflow ResourceMonitor.SUB_LoadHistory($Snapshot: ResourceMonitor.Snapshot) returns Boolean as $Done
+begin
+  declare $To datetime = [%CurrentDateTime%];
+  declare $From datetime = [%CurrentDateTime%];
+  declare $Max integer = 720;
+  if $Snapshot/FullDetail then
+    set $Max = 1440;
+  end if;
+  if $Snapshot/CustomFrom = empty or $Snapshot/CustomTo = empty then
+    change $Snapshot (CustomTo = $To, CustomFrom = addMinutes($To, -60));
+  end if;
+  if $Snapshot/Range = ResourceMonitor.ChartRange.Custom then
+    set $From = $Snapshot/CustomFrom;
+    set $To = $Snapshot/CustomTo;
+    set $Max = 1440;
+  else
+    $Minutes = call microflow ResourceMonitor.SUB_RangeMinutes(Range = $Snapshot/Range);
+    set $From = addMinutes($To, 0 - $Minutes);
+  end if;
+  if $To <= $From then
+    set $To = addMinutes($From, 1);
+  end if;
+  $Loaded = call java action ResourceMonitor.JA_LoadHistory(Snapshot = $Snapshot, FromTime = $From, ToTime = $To, MaxBuckets = $Max);
+  return true;
+end;
+
+/** Shows the From/To period the user entered. Up to 24 hours is one point per minute. */
+create or modify microflow ResourceMonitor.ACT_ApplyCustomRange($Snapshot: ResourceMonitor.Snapshot) returns Boolean as $Done
+begin
+  change $Snapshot (Range = ResourceMonitor.ChartRange.Custom);
+  $Loaded = call microflow ResourceMonitor.SUB_LoadHistory(Snapshot = $Snapshot);
+  return true;
+end;
+
+
+/** Data source of the dashboard page: a fresh live snapshot plus the charts for the default range. */
+create or modify microflow ResourceMonitor.DS_Snapshot() returns ResourceMonitor.Snapshot as $Snapshot
+begin
+  $Snapshot = call microflow ResourceMonitor.SUB_CaptureSnapshot(IncludeStackTraces = true, IncludeJmxMetrics = true);
+  $Done = call microflow ResourceMonitor.SUB_LoadHistory(Snapshot = $Snapshot);
+  return $Snapshot;
+end;
+
+/** Re-captures the live values and reloads the charts for the selected range. */
+create or modify microflow ResourceMonitor.ACT_Refresh($Snapshot: ResourceMonitor.Snapshot) returns Boolean as $Done
+begin
+  $Captured = call java action ResourceMonitor.JA_Capture(
+    Snapshot = $Snapshot,
+    IncludeStackTraces = true,
+    IncludeJmxMetrics = true
+  );
+  $Loaded = call microflow ResourceMonitor.SUB_LoadHistory(Snapshot = $Snapshot);
+  return true;
+end;
+
+/** Switches the dashboard to another time range and reloads the charts. */
+create or modify microflow ResourceMonitor.ACT_SetRange(
+  $Snapshot: ResourceMonitor.Snapshot,
+  $Range: ResourceMonitor.ChartRange
+) returns Boolean as $Done
+begin
+  change $Snapshot (Range = $Range);
+  $Loaded = call microflow ResourceMonitor.SUB_LoadHistory(Snapshot = $Snapshot);
+  return true;
+end;
+
+/** Switches between about 1500 points per chart and every single minute, then reloads the charts. */
+create or modify microflow ResourceMonitor.ACT_ToggleDetail($Snapshot: ResourceMonitor.Snapshot) returns Boolean as $Done
+begin
+  change $Snapshot (FullDetail = not($Snapshot/FullDetail));
+  $Loaded = call microflow ResourceMonitor.SUB_LoadHistory(Snapshot = $Snapshot);
+  return true;
+end;
+
+/** Runs every minute from the scheduled event: stores one sample and applies the retention period. */
+create or modify microflow ResourceMonitor.SE_CollectPoint() returns Boolean as $Collected
+begin
+  if @ResourceMonitor.CollectionEnabled then
+    $Snapshot = call microflow ResourceMonitor.SUB_CaptureSnapshot(IncludeStackTraces = false, IncludeJmxMetrics = false);
+    $Recorded = call java action ResourceMonitor.JA_RecordPoint(Snapshot = $Snapshot, RetentionDays = @ResourceMonitor.RetentionDays);
+    return true;
+  end if;
+  return false;
+end;
+
+/** Data source of the history admin page. */
+create or modify microflow ResourceMonitor.DS_HistoryStatus() returns ResourceMonitor.HistoryStatus as $Status
+begin
+  $Status = create ResourceMonitor.HistoryStatus (
+    RetentionDays = @ResourceMonitor.RetentionDays,
+    CollectionEnabled = @ResourceMonitor.CollectionEnabled
+  );
+  $Filled = call java action ResourceMonitor.JA_HistoryStatus(Status = $Status);
+  return $Status;
+end;
+
+/** Stores one sample right now, in addition to the scheduled one. */
+create or modify microflow ResourceMonitor.ACT_CollectNow($Status: ResourceMonitor.HistoryStatus) returns Boolean as $Done
+begin
+  $Snapshot = call microflow ResourceMonitor.SUB_CaptureSnapshot(IncludeStackTraces = false, IncludeJmxMetrics = false);
+  $Recorded = call java action ResourceMonitor.JA_RecordPoint(Snapshot = $Snapshot, RetentionDays = @ResourceMonitor.RetentionDays);
+  $Filled = call java action ResourceMonitor.JA_HistoryStatus(Status = $Status);
+  change $Status (Message = 'Stored one sample.');
+  return true;
+end;
+
+/** Fills the retention period with synthetic per-minute history so the charts can be tried. Replaces earlier demo samples. */
+create or modify microflow ResourceMonitor.ACT_GenerateDemoHistory($Status: ResourceMonitor.HistoryStatus) returns Boolean as $Done
+begin
+  $Created = call java action ResourceMonitor.JA_GenerateDemoHistory(Days = @ResourceMonitor.RetentionDays);
+  $Filled = call java action ResourceMonitor.JA_HistoryStatus(Status = $Status);
+  change $Status (Message = 'Created ' + toString($Created) + ' demo samples, flagged as demo data.');
+  return true;
+end;
+
+/** Removes the synthetic samples and keeps the real ones. */
+create or modify microflow ResourceMonitor.ACT_DeleteDemoHistory($Status: ResourceMonitor.HistoryStatus) returns Boolean as $Done
+begin
+  $Deleted = call java action ResourceMonitor.JA_DeleteHistory(DemoOnly = true);
+  $Filled = call java action ResourceMonitor.JA_HistoryStatus(Status = $Status);
+  change $Status (Message = 'Deleted ' + toString($Deleted) + ' demo samples.');
+  return true;
+end;
+
+/** Removes all stored history, real and demo. */
+create or modify microflow ResourceMonitor.ACT_DeleteAllHistory($Status: ResourceMonitor.HistoryStatus) returns Boolean as $Done
+begin
+  $Deleted = call java action ResourceMonitor.JA_DeleteHistory(DemoOnly = false);
+  $Filled = call java action ResourceMonitor.JA_HistoryStatus(Status = $Status);
+  change $Status (Message = 'Deleted ' + toString($Deleted) + ' samples.');
+  return true;
+end;
+
+create or modify scheduled event ResourceMonitor.SE_CollectPoint (
+  Microflow: ResourceMonitor.SE_CollectPoint,
+  Repeat: Minutely,
+  Multiplier: 1,
+  Enabled: true
+);
+
+GRANT EXECUTE ON MICROFLOW ResourceMonitor.SUB_RangeMinutes TO ResourceMonitor.Admin;
+GRANT EXECUTE ON MICROFLOW ResourceMonitor.SUB_LoadHistory TO ResourceMonitor.Admin;
+GRANT EXECUTE ON MICROFLOW ResourceMonitor.ACT_SetRange TO ResourceMonitor.Admin;
+GRANT EXECUTE ON MICROFLOW ResourceMonitor.SE_CollectPoint TO ResourceMonitor.Admin;
+GRANT EXECUTE ON MICROFLOW ResourceMonitor.DS_HistoryStatus TO ResourceMonitor.Admin;
+GRANT EXECUTE ON MICROFLOW ResourceMonitor.ACT_CollectNow TO ResourceMonitor.Admin;
+GRANT EXECUTE ON MICROFLOW ResourceMonitor.ACT_GenerateDemoHistory TO ResourceMonitor.Admin;
+GRANT EXECUTE ON MICROFLOW ResourceMonitor.ACT_DeleteDemoHistory TO ResourceMonitor.Admin;
+GRANT EXECUTE ON MICROFLOW ResourceMonitor.ACT_DeleteAllHistory TO ResourceMonitor.Admin;
+GRANT EXECUTE ON MICROFLOW ResourceMonitor.ACT_ToggleDetail TO ResourceMonitor.Admin;
+GRANT EXECUTE ON MICROFLOW ResourceMonitor.ACT_ApplyCustomRange TO ResourceMonitor.Admin;

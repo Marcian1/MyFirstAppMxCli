@@ -58,7 +58,116 @@ create or modify page ResourceMonitor.Dashboard
     }
 
     tabcontainer tabs {
-      tabpage tabOverview (caption: 'Overview') {
+      tabpage tabCharts (caption: 'Overview') {
+        dynamictext txtNow (content: 'Now: process CPU {1}% | heap {2} of {3} MB | {4} threads | DB pool {5} of {6} | {7} sessions', contentparams: ({1} = ProcessCpuLoadPercent, {2} = HeapUsedMb, {3} = HeapMaxMb, {4} = ThreadCount, {5} = DbPoolActive, {6} = DbPoolMaxTotal, {7} = ActiveSessions))
+        layoutgrid gridRange {
+          row {
+            column (desktopwidth: 12) {
+              actionbutton btnR1h (caption: '1 hour', action: call microflow ResourceMonitor.ACT_SetRange(Snapshot = $currentObject, Range = ResourceMonitor.ChartRange.Last1h))
+              actionbutton btnR6h (caption: '6 hours', action: call microflow ResourceMonitor.ACT_SetRange(Snapshot = $currentObject, Range = ResourceMonitor.ChartRange.Last6h))
+              actionbutton btnR24h (caption: '24 hours', action: call microflow ResourceMonitor.ACT_SetRange(Snapshot = $currentObject, Range = ResourceMonitor.ChartRange.Last24h))
+              actionbutton btnR3d (caption: '3 days', action: call microflow ResourceMonitor.ACT_SetRange(Snapshot = $currentObject, Range = ResourceMonitor.ChartRange.Last3d))
+              actionbutton btnR7d (caption: '7 days', action: call microflow ResourceMonitor.ACT_SetRange(Snapshot = $currentObject, Range = ResourceMonitor.ChartRange.Last7d))
+              actionbutton btnR14d (caption: '14 days', action: call microflow ResourceMonitor.ACT_SetRange(Snapshot = $currentObject, Range = ResourceMonitor.ChartRange.Last14d))
+              actionbutton btnDetail (caption: 'Max detail on/off', action: call microflow ResourceMonitor.ACT_ToggleDetail(Snapshot = $currentObject))
+              linkbutton lnkHistory (caption: 'History settings and demo data', action: show page ResourceMonitor.History)
+            }
+          }
+        }
+        layoutgrid gridCustom {
+          row {
+            column (desktopwidth: 3) {
+              datepicker dpFrom (label: 'From', attribute: CustomFrom, DateFormat: DateTime)
+            }
+            column (desktopwidth: 3) {
+              datepicker dpTo (label: 'To', attribute: CustomTo, DateFormat: DateTime)
+            }
+            column (desktopwidth: 6) {
+              actionbutton btnApply (caption: 'Show this period', action: call microflow ResourceMonitor.ACT_ApplyCustomRange(Snapshot = $currentObject), buttonstyle: primary)
+              dynamictext txtHint (content: 'A period of up to 24 hours shows one point per minute.')
+            }
+          }
+        }
+        dynamictext txtRange (content: 'Showing {1}. {2}', contentparams: ({1} = Range, {2} = HistoryNote))
+        layoutgrid gridCharts {
+          row {
+          column (desktopwidth: 6) {
+            dynamictext hCpu (content: 'CPU', rendermode: H5)
+            timeseries tsCpu (showLegend: true, showRangeSlider: false, gridLines: horizontal, heightUnit: pixels, height: 260, yAxisLabel: '%') {
+              line lCpuAvg (dataSet: static, staticDataSource: $currentObject/ResourceMonitor.Snapshot_ChartPoint, staticName: 'Process CPU (avg)', staticXAttribute: Timestamp, staticYAttribute: ProcessCpuAvg, enableFillArea: true, lineStyle: line)
+              line lCpuMax (dataSet: static, staticDataSource: $currentObject/ResourceMonitor.Snapshot_ChartPoint, staticName: 'Process CPU (max)', staticXAttribute: Timestamp, staticYAttribute: ProcessCpuMax, enableFillArea: false, lineStyle: line)
+              line lSysCpu (dataSet: static, staticDataSource: $currentObject/ResourceMonitor.Snapshot_ChartPoint, staticName: 'System CPU (avg)', staticXAttribute: Timestamp, staticYAttribute: SystemCpuAvg, enableFillArea: false, lineStyle: line)
+            }
+          }
+          column (desktopwidth: 6) {
+            dynamictext hHeap (content: 'Memory', rendermode: H5)
+            timeseries tsHeap (showLegend: true, showRangeSlider: false, gridLines: horizontal, heightUnit: pixels, height: 260, yAxisLabel: 'MB') {
+              line lHeapUsed (dataSet: static, staticDataSource: $currentObject/ResourceMonitor.Snapshot_ChartPoint, staticName: 'Heap used (avg)', staticXAttribute: Timestamp, staticYAttribute: HeapUsedMb, enableFillArea: true, lineStyle: line)
+              line lHeapMaxUsed (dataSet: static, staticDataSource: $currentObject/ResourceMonitor.Snapshot_ChartPoint, staticName: 'Heap used (max)', staticXAttribute: Timestamp, staticYAttribute: HeapUsedMaxMb, enableFillArea: false, lineStyle: line)
+              line lHeapCommitted (dataSet: static, staticDataSource: $currentObject/ResourceMonitor.Snapshot_ChartPoint, staticName: 'Heap committed', staticXAttribute: Timestamp, staticYAttribute: HeapCommittedMb, enableFillArea: false, lineStyle: line)
+              line lNonHeap (dataSet: static, staticDataSource: $currentObject/ResourceMonitor.Snapshot_ChartPoint, staticName: 'Non-heap used', staticXAttribute: Timestamp, staticYAttribute: NonHeapUsedMb, enableFillArea: false, lineStyle: line)
+            }
+          }
+          }
+          row {
+          column (desktopwidth: 6) {
+            dynamictext hThreads (content: 'Threads', rendermode: H5)
+            timeseries tsThreads (showLegend: true, showRangeSlider: false, gridLines: horizontal, heightUnit: pixels, height: 260, yAxisLabel: 'threads') {
+              line lThreads (dataSet: static, staticDataSource: $currentObject/ResourceMonitor.Snapshot_ChartPoint, staticName: 'JVM threads (avg)', staticXAttribute: Timestamp, staticYAttribute: Threads, enableFillArea: false, lineStyle: line)
+              line lThreadsMax (dataSet: static, staticDataSource: $currentObject/ResourceMonitor.Snapshot_ChartPoint, staticName: 'JVM threads (max)', staticXAttribute: Timestamp, staticYAttribute: ThreadsMax, enableFillArea: false, lineStyle: line)
+              line lDaemon (dataSet: static, staticDataSource: $currentObject/ResourceMonitor.Snapshot_ChartPoint, staticName: 'Daemon threads', staticXAttribute: Timestamp, staticYAttribute: DaemonThreads, enableFillArea: false, lineStyle: line)
+              line lWeb (dataSet: static, staticDataSource: $currentObject/ResourceMonitor.Snapshot_ChartPoint, staticName: 'Web server pool', staticXAttribute: Timestamp, staticYAttribute: WebThreads, enableFillArea: false, lineStyle: line)
+              line lWebBusy (dataSet: static, staticDataSource: $currentObject/ResourceMonitor.Snapshot_ChartPoint, staticName: 'Web server busy', staticXAttribute: Timestamp, staticYAttribute: WebBusyThreads, enableFillArea: false, lineStyle: line)
+            }
+          }
+          column (desktopwidth: 6) {
+            dynamictext hPool (content: 'Database connections', rendermode: H5)
+            timeseries tsPool (showLegend: true, showRangeSlider: false, gridLines: horizontal, heightUnit: pixels, height: 260, yAxisLabel: 'connections') {
+              line lPoolActive (dataSet: static, staticDataSource: $currentObject/ResourceMonitor.Snapshot_ChartPoint, staticName: 'Active (avg)', staticXAttribute: Timestamp, staticYAttribute: PoolActive, enableFillArea: true, lineStyle: line)
+              line lPoolMax (dataSet: static, staticDataSource: $currentObject/ResourceMonitor.Snapshot_ChartPoint, staticName: 'Active (max)', staticXAttribute: Timestamp, staticYAttribute: PoolActiveMax, enableFillArea: false, lineStyle: line)
+              line lPoolIdle (dataSet: static, staticDataSource: $currentObject/ResourceMonitor.Snapshot_ChartPoint, staticName: 'Idle', staticXAttribute: Timestamp, staticYAttribute: PoolIdle, enableFillArea: false, lineStyle: line)
+              line lPoolWait (dataSet: static, staticDataSource: $currentObject/ResourceMonitor.Snapshot_ChartPoint, staticName: 'Waiting', staticXAttribute: Timestamp, staticYAttribute: PoolWaiters, enableFillArea: false, lineStyle: line)
+            }
+          }
+          }
+          row {
+          column (desktopwidth: 6) {
+            dynamictext hOps (content: 'Database activity (per minute)', rendermode: H5)
+            timeseries tsOps (showLegend: true, showRangeSlider: false, gridLines: horizontal, heightUnit: pixels, height: 260, yAxisLabel: 'per minute') {
+              line lSel (dataSet: static, staticDataSource: $currentObject/ResourceMonitor.Snapshot_ChartPoint, staticName: 'Selects', staticXAttribute: Timestamp, staticYAttribute: SelectsPerMin, enableFillArea: false, lineStyle: line)
+              line lIns (dataSet: static, staticDataSource: $currentObject/ResourceMonitor.Snapshot_ChartPoint, staticName: 'Inserts', staticXAttribute: Timestamp, staticYAttribute: InsertsPerMin, enableFillArea: false, lineStyle: line)
+              line lUpd (dataSet: static, staticDataSource: $currentObject/ResourceMonitor.Snapshot_ChartPoint, staticName: 'Updates', staticXAttribute: Timestamp, staticYAttribute: UpdatesPerMin, enableFillArea: false, lineStyle: line)
+              line lDel (dataSet: static, staticDataSource: $currentObject/ResourceMonitor.Snapshot_ChartPoint, staticName: 'Deletes', staticXAttribute: Timestamp, staticYAttribute: DeletesPerMin, enableFillArea: false, lineStyle: line)
+              line lTx (dataSet: static, staticDataSource: $currentObject/ResourceMonitor.Snapshot_ChartPoint, staticName: 'Transactions', staticXAttribute: Timestamp, staticYAttribute: TransactionsPerMin, enableFillArea: false, lineStyle: line)
+            }
+          }
+          column (desktopwidth: 6) {
+            dynamictext hSessions (content: 'Sessions', rendermode: H5)
+            timeseries tsSessions (showLegend: true, showRangeSlider: false, gridLines: horizontal, heightUnit: pixels, height: 260, yAxisLabel: 'sessions') {
+              line lSess (dataSet: static, staticDataSource: $currentObject/ResourceMonitor.Snapshot_ChartPoint, staticName: 'Sessions (avg)', staticXAttribute: Timestamp, staticYAttribute: Sessions, enableFillArea: true, lineStyle: line)
+              line lSessMax (dataSet: static, staticDataSource: $currentObject/ResourceMonitor.Snapshot_ChartPoint, staticName: 'Sessions (max)', staticXAttribute: Timestamp, staticYAttribute: SessionsMax, enableFillArea: false, lineStyle: line)
+            }
+          }
+          }
+          row {
+          column (desktopwidth: 6) {
+            dynamictext hGc (content: 'Garbage collection', rendermode: H5)
+            timeseries tsGc (showLegend: true, showRangeSlider: false, gridLines: horizontal, heightUnit: pixels, height: 260, yAxisLabel: 'per minute') {
+              line lGcCount (dataSet: static, staticDataSource: $currentObject/ResourceMonitor.Snapshot_ChartPoint, staticName: 'Collections per minute', staticXAttribute: Timestamp, staticYAttribute: GcCountPerMin, enableFillArea: false, lineStyle: line)
+              line lGcTime (dataSet: static, staticDataSource: $currentObject/ResourceMonitor.Snapshot_ChartPoint, staticName: 'GC time (ms per minute)', staticXAttribute: Timestamp, staticYAttribute: GcTimeMsPerMin, enableFillArea: false, lineStyle: line)
+            }
+          }
+          column (desktopwidth: 6) {
+            dynamictext hPing (content: 'Database response', rendermode: H5)
+            timeseries tsPing (showLegend: true, showRangeSlider: false, gridLines: horizontal, heightUnit: pixels, height: 260, yAxisLabel: 'ms') {
+              line lPing (dataSet: static, staticDataSource: $currentObject/ResourceMonitor.Snapshot_ChartPoint, staticName: 'Connection check (ms)', staticXAttribute: Timestamp, staticYAttribute: DbPingMs, enableFillArea: true, lineStyle: line)
+            }
+          }
+          }
+        }
+      }
+
+      tabpage tabOverview (caption: 'Live now') {
         layoutgrid gridOverview {
           row {
             column (desktopwidth: 4) {

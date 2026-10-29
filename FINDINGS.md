@@ -11,3 +11,7 @@
 - Local dev sessions are named `Anonymous_<uuid>`; anonymous detection matches that prefix.
 - Accepted lint: DESIGN001 on Snapshot (72 attributes, one non-persistent snapshot by design), CONV013/CONV010 (Java action never throws, every section is try/catch).
 - Mendix runtime default on this PC is Java 8; mxcli run/test need JAVA_HOME at JDK 25.
+- History (14 days, minute by minute): scheduled event SE_CollectPoint stores one persistent ResourcePoint per minute; retention constant RetentionDays=14 enforced in JA_RecordPoint. Charts use the Time series widget bound to non-persistent ChartPoint buckets (Snapshot_ChartPoint). 12/12 mxcli tests pass; docker check 0 errors.
+- Browser limit measured: 20,160 points x 8 charts crashed the browser tab. Defaults are 720 points per chart (1440 with Max detail); true minute resolution for any day via the custom From/To period (up to 24 h = one point per minute). Dev-mode client logs every object (328k console messages), so long ranges are slower here than in a deployed app (server answers in ~0.8 s, 2.9 MB for 1440 points).
+- mxcli quirk: `create or modify microflow` could not splice a restructured SUB_LoadHistory (variables inside a new branch "not declared"); `drop microflow if exists` + `create microflow` works and callers (by name) reconnect.
+- Demo data is flagged IsDemo and only fills the time before the oldest real sample.
