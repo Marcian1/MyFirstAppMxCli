@@ -1,0 +1,7 @@
+mdl 1;
+
+ALTER PAGE MyFirstModule.Customer_Overview {
+  INSERT AFTER heading {
+    actionbutton btnNew (caption: 'New customer', action: create object MyFirstModule.Customer then show page MyFirstModule.Customer_NewEdit(Customer = $currentObject), buttonstyle: primary)
+  }
+};
