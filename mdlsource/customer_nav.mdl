@@ -1,0 +1,7 @@
+mdl 1;
+
+ALTER NAVIGATION Responsive {
+  INSERT AFTER 'Home' {
+    menu item 'Customers' ( OnClick: show page MyFirstModule.Customer_Overview )
+  }
+};

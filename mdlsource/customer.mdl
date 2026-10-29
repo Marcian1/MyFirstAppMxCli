@@ -1,0 +1,71 @@
+mdl 1;
+
+-- Customer entity
+CREATE PERSISTENT ENTITY IF NOT EXISTS MyFirstModule.Customer (
+  Name: String(200) NOT NULL ERROR MESSAGE 'Name is required',
+  Email: String(200),
+  Phone: String(50),
+  IsActive: Boolean DEFAULT true
+);
+
+-- Create/edit form (popup)
+create or modify page MyFirstModule.Customer_NewEdit
+(
+  params: ( $Customer: MyFirstModule.Customer ),
+  title: 'Customer',
+  layout: Atlas_Core.PopupLayout
+)
+{
+  layoutgrid mainGrid {
+    row {
+      column (desktopwidth: autofill) {
+        dataview dataView1 (datasource: $Customer) {
+          textbox txtName (label: 'Name', attribute: Name)
+          textbox txtEmail (label: 'Email', attribute: Email)
+          textbox txtPhone (label: 'Phone', attribute: Phone)
+          checkbox cbActive (label: 'Active', attribute: IsActive)
+
+          footer {
+            actionbutton btnSave (caption: 'Save', action: save changes, buttonstyle: success)
+            actionbutton btnCancel (caption: 'Cancel', action: cancel changes)
+          }
+        }
+      }
+    }
+  }
+};
+
+-- Overview page
+create or modify page MyFirstModule.Customer_Overview
+(
+  title: 'Customers',
+  layout: MyFirstModule.App_Default
+)
+{
+  layoutgrid mainGrid {
+    row {
+      column (desktopwidth: autofill) {
+        dynamictext heading (content: 'Customers', rendermode: H2)
+        datagrid CustomerGrid (
+          datasource: database MyFirstModule.Customer,
+          selection: Multi,
+          PagingPosition: both
+        ) {
+          column (attribute: Name, caption: 'Name') {
+            textfilter textFilter1
+          }
+          column (attribute: Email, caption: 'Email') {
+            textfilter textFilter2
+          }
+          column (attribute: Phone, caption: 'Phone') {
+            textfilter textFilter3
+          }
+          column (caption: 'Actions') {
+            actionbutton btnEdit (caption: 'Edit', action: show page MyFirstModule.Customer_NewEdit(Customer = $currentObject))
+            actionbutton btnDelete (caption: 'Delete', action: delete, buttonstyle: danger)
+          }
+        }
+      }
+    }
+  }
+};
