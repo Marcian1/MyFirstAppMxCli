@@ -1,0 +1,67 @@
+mdl 1;
+
+-- Overview redesign, cleanup: remove what is user data or a secret, and what the dashboard no longer shows.
+-- Run after 10, 11 and 12 so nothing still points at these elements.
+
+drop microflow if exists ResourceMonitor.ACT_ToggleDetail;
+
+-- user data and raw JMX / system property dumps
+drop entity if exists ResourceMonitor.SessionSample;
+drop entity if exists ResourceMonitor.MetricSample;
+drop entity if exists ResourceMonitor.SystemPropertySample;
+
+ALTER ENTITY ResourceMonitor.Snapshot DROP ATTRIBUTE IF EXISTS ApplicationRootUrl;
+ALTER ENTITY ResourceMonitor.Snapshot DROP ATTRIBUTE IF EXISTS NamedUsersConcurrent;
+ALTER ENTITY ResourceMonitor.Snapshot DROP ATTRIBUTE IF EXISTS AnonymousSessions;
+ALTER ENTITY ResourceMonitor.Snapshot DROP ATTRIBUTE IF EXISTS MaxConcurrentUsers;
+ALTER ENTITY ResourceMonitor.Snapshot DROP ATTRIBUTE IF EXISTS JavaVendor;
+ALTER ENTITY ResourceMonitor.Snapshot DROP ATTRIBUTE IF EXISTS UptimeSeconds;
+ALTER ENTITY ResourceMonitor.Snapshot DROP ATTRIBUTE IF EXISTS OsVersion;
+ALTER ENTITY ResourceMonitor.Snapshot DROP ATTRIBUTE IF EXISTS JvmArguments;
+ALTER ENTITY ResourceMonitor.Snapshot DROP ATTRIBUTE IF EXISTS SystemLoadAverage;
+ALTER ENTITY ResourceMonitor.Snapshot DROP ATTRIBUTE IF EXISTS ProcessCpuTimeMs;
+ALTER ENTITY ResourceMonitor.Snapshot DROP ATTRIBUTE IF EXISTS OpenFileDescriptors;
+ALTER ENTITY ResourceMonitor.Snapshot DROP ATTRIBUTE IF EXISTS MaxFileDescriptors;
+ALTER ENTITY ResourceMonitor.Snapshot DROP ATTRIBUTE IF EXISTS NonHeapCommittedMb;
+ALTER ENTITY ResourceMonitor.Snapshot DROP ATTRIBUTE IF EXISTS SwapTotalMb;
+ALTER ENTITY ResourceMonitor.Snapshot DROP ATTRIBUTE IF EXISTS SwapFreeMb;
+ALTER ENTITY ResourceMonitor.Snapshot DROP ATTRIBUTE IF EXISTS DaemonThreadCount;
+ALTER ENTITY ResourceMonitor.Snapshot DROP ATTRIBUTE IF EXISTS PeakThreadCount;
+ALTER ENTITY ResourceMonitor.Snapshot DROP ATTRIBUTE IF EXISTS TotalStartedThreadCount;
+ALTER ENTITY ResourceMonitor.Snapshot DROP ATTRIBUTE IF EXISTS LoadedClassCount;
+ALTER ENTITY ResourceMonitor.Snapshot DROP ATTRIBUTE IF EXISTS TotalLoadedClassCount;
+ALTER ENTITY ResourceMonitor.Snapshot DROP ATTRIBUTE IF EXISTS UnloadedClassCount;
+ALTER ENTITY ResourceMonitor.Snapshot DROP ATTRIBUTE IF EXISTS DbUrl;
+ALTER ENTITY ResourceMonitor.Snapshot DROP ATTRIBUTE IF EXISTS DbUserName;
+ALTER ENTITY ResourceMonitor.Snapshot DROP ATTRIBUTE IF EXISTS DbPoolBorrowedTotal;
+ALTER ENTITY ResourceMonitor.Snapshot DROP ATTRIBUTE IF EXISTS DbPoolMaxBorrowWaitMs;
+ALTER ENTITY ResourceMonitor.Snapshot DROP ATTRIBUTE IF EXISTS DbInserts;
+ALTER ENTITY ResourceMonitor.Snapshot DROP ATTRIBUTE IF EXISTS DbDeletes;
+ALTER ENTITY ResourceMonitor.Snapshot DROP ATTRIBUTE IF EXISTS DbTransactions;
+ALTER ENTITY ResourceMonitor.Snapshot DROP ATTRIBUTE IF EXISTS EntityCount;
+ALTER ENTITY ResourceMonitor.Snapshot DROP ATTRIBUTE IF EXISTS WebConnectedEndPoints;
+ALTER ENTITY ResourceMonitor.Snapshot DROP ATTRIBUTE IF EXISTS FullDetail;
+
+ALTER ENTITY ResourceMonitor.ResourcePoint DROP ATTRIBUTE IF EXISTS PhysicalFreeMb;
+ALTER ENTITY ResourceMonitor.ResourcePoint DROP ATTRIBUTE IF EXISTS LoadedClasses;
+ALTER ENTITY ResourceMonitor.ResourcePoint DROP ATTRIBUTE IF EXISTS DaemonThreads;
+ALTER ENTITY ResourceMonitor.ResourcePoint DROP ATTRIBUTE IF EXISTS InsertsTotal;
+ALTER ENTITY ResourceMonitor.ResourcePoint DROP ATTRIBUTE IF EXISTS DeletesTotal;
+ALTER ENTITY ResourceMonitor.ResourcePoint DROP ATTRIBUTE IF EXISTS TransactionsTotal;
+
+ALTER ENTITY ResourceMonitor.ChartPoint DROP ATTRIBUTE IF EXISTS ProcessCpuMax;
+ALTER ENTITY ResourceMonitor.ChartPoint DROP ATTRIBUTE IF EXISTS HeapUsedMaxMb;
+ALTER ENTITY ResourceMonitor.ChartPoint DROP ATTRIBUTE IF EXISTS PhysicalFreeMb;
+ALTER ENTITY ResourceMonitor.ChartPoint DROP ATTRIBUTE IF EXISTS Threads;
+ALTER ENTITY ResourceMonitor.ChartPoint DROP ATTRIBUTE IF EXISTS ThreadsMax;
+ALTER ENTITY ResourceMonitor.ChartPoint DROP ATTRIBUTE IF EXISTS DaemonThreads;
+ALTER ENTITY ResourceMonitor.ChartPoint DROP ATTRIBUTE IF EXISTS WebThreads;
+ALTER ENTITY ResourceMonitor.ChartPoint DROP ATTRIBUTE IF EXISTS PoolActiveMax;
+ALTER ENTITY ResourceMonitor.ChartPoint DROP ATTRIBUTE IF EXISTS DbPingMs;
+ALTER ENTITY ResourceMonitor.ChartPoint DROP ATTRIBUTE IF EXISTS SessionsMax;
+ALTER ENTITY ResourceMonitor.ChartPoint DROP ATTRIBUTE IF EXISTS GcCountPerMin;
+ALTER ENTITY ResourceMonitor.ChartPoint DROP ATTRIBUTE IF EXISTS GcTimeMsPerMin;
+ALTER ENTITY ResourceMonitor.ChartPoint DROP ATTRIBUTE IF EXISTS InsertsPerMin;
+ALTER ENTITY ResourceMonitor.ChartPoint DROP ATTRIBUTE IF EXISTS DeletesPerMin;
+ALTER ENTITY ResourceMonitor.ChartPoint DROP ATTRIBUTE IF EXISTS TransactionsPerMin;
+

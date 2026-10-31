@@ -56,7 +56,7 @@ public class JA_GenerateDemoHistory extends UserAction<java.lang.Long>
 		final java.util.Calendar cal = java.util.Calendar.getInstance();
 		final java.util.function.Function<Double, java.math.BigDecimal> dec = d -> java.math.BigDecimal.valueOf(Math.max(0.0, d)).setScale(2, java.math.RoundingMode.HALF_UP);
 		
-		double gcCount = 0, gcTime = 0, selects = 0, inserts = 0, updates = 0, deletes = 0, tx = 0;
+		double gcCount = 0, gcTime = 0, selects = 0, updates = 0;
 		long spikeLeft = 0;
 		double spikePower = 0;
 		long idx = 0;
@@ -92,10 +92,7 @@ public class JA_GenerateDemoHistory extends UserAction<java.lang.Long>
 		  gcCount += (gcNow ? 3 : 0) + (rnd.nextInt(3) == 0 ? 1 : 0);
 		  gcTime += (gcNow ? 80 + 120 * rnd.nextDouble() : 4 * rnd.nextDouble()) * (1 + activity);
 		  selects += 20 + 480 * activity * (0.6 + 0.8 * rnd.nextDouble());
-		  inserts += 2 + 40 * activity * rnd.nextDouble();
 		  updates += 1 + 30 * activity * rnd.nextDouble();
-		  deletes += 0.2 + 8 * activity * rnd.nextDouble();
-		  tx += 5 + 90 * activity * (0.6 + 0.8 * rnd.nextDouble());
 		
 		  com.mendix.systemwideinterfaces.core.IMendixObject p = com.mendix.core.Core.instantiate(ctx, "ResourceMonitor.ResourcePoint");
 		  p.setValue(ctx, "Timestamp", new java.util.Date(t));
@@ -106,10 +103,7 @@ public class JA_GenerateDemoHistory extends UserAction<java.lang.Long>
 		  p.setValue(ctx, "HeapCommittedMb", Long.valueOf(Math.max(2048L, Math.round(heapUsed * 1.25))));
 		  p.setValue(ctx, "HeapMaxMb", Long.valueOf(8192L));
 		  p.setValue(ctx, "NonHeapUsedMb", Long.valueOf(Math.round(138 + idx / 20000.0 * 12 + 2 * rnd.nextDouble())));
-		  p.setValue(ctx, "PhysicalFreeMb", Long.valueOf(Math.round(19000 - 3500 * activity + 400 * rnd.nextGaussian())));
-		  p.setValue(ctx, "LoadedClasses", Long.valueOf(17900L + Math.round(idx / 20000.0 * 600)));
 		  p.setValue(ctx, "Threads", Long.valueOf(threads));
-		  p.setValue(ctx, "DaemonThreads", Long.valueOf(Math.max(0, threads - 35)));
 		  p.setValue(ctx, "DeadlockedThreads", Long.valueOf(0L));
 		  p.setValue(ctx, "WebThreads", Long.valueOf(web));
 		  p.setValue(ctx, "WebIdleThreads", Long.valueOf(Math.max(0, web - busy)));
@@ -122,10 +116,7 @@ public class JA_GenerateDemoHistory extends UserAction<java.lang.Long>
 		  p.setValue(ctx, "GcCountTotal", Long.valueOf(Math.round(gcCount)));
 		  p.setValue(ctx, "GcTimeMsTotal", Long.valueOf(Math.round(gcTime)));
 		  p.setValue(ctx, "SelectsTotal", Long.valueOf(Math.round(selects)));
-		  p.setValue(ctx, "InsertsTotal", Long.valueOf(Math.round(inserts)));
 		  p.setValue(ctx, "UpdatesTotal", Long.valueOf(Math.round(updates)));
-		  p.setValue(ctx, "DeletesTotal", Long.valueOf(Math.round(deletes)));
-		  p.setValue(ctx, "TransactionsTotal", Long.valueOf(Math.round(tx)));
 		  batch.add(p);
 		  created++;
 		  if (batch.size() >= 1000) {

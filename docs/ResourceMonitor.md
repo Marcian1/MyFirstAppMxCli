@@ -2,7 +2,7 @@
 
 A reusable Mendix module that gives a developer a Grafana-style view of the running application: **history charts
 for the last 14 days, minute by minute**, plus a live view of runtime, JVM, CPU, memory, threads, GC, database,
-web server and sessions.
+web server and session count.
 
 Built and tested on Mendix 11.15.0 (Java 25). Package: `dist/ResourceMonitor.mpk`.
 
@@ -18,31 +18,26 @@ Storage: one row per minute is about 20,000 rows for 14 days.
 
 ## The dashboard
 
-**Overview tab** (charts)
-- Period buttons: 1 hour, 6 hours, 24 hours, 3 days, 7 days, 14 days, or a **custom From / To period**.
-- Eight charts: CPU, memory (heap, committed, non-heap), threads (JVM and web server), database connections
-  (active, idle, waiting), database activity per minute (selects, inserts, updates, deletes, transactions),
-  sessions, garbage collection, and database response time. Each chart has a legend and zoom.
-
-**Resolution**
+**Overview tab**
+- Six status tiles (process CPU, heap, DB connections, web request queue, sessions, deadlocked threads), coloured green, amber or red.
+  Thresholds: CPU 70/90 %, heap 75/90 %, pool 70/90 %, any queued request or deadlock is red.
+- Range buttons (1 hour, 6 hours, 24 hours, 3 days, 7 days, 14 days) with the active one highlighted, and a custom From / To period.
+- Six charts (Time series): CPU, memory (heap used, committed, non-heap, heap max line), database connections (active, idle,
+  waiters, pool size line), web server threads (busy, queued, max line), database activity per minute (selects, updates), sessions.
+  Waiters and queued requests keep the bucket **maximum** so a short spike is not averaged away.
+- Every tile, chart and table title has an "i" Tooltip with what the metric is, why it matters, what to watch for and its JMX source.
 
 | View | Points per chart |
 |---|---|
 | 1 hour, 6 hours | one per minute |
 | 24 hours | one per 2 minutes |
-| 3 / 7 / 14 days | one per 6 / 14 / 28 minutes (averages; CPU, heap, threads, pool and sessions also show the maximum) |
-| **Max detail** toggle | up to 1440 points: 24 hours is every minute, 14 days is 14-minute buckets |
-| **Custom period** up to 24 hours | **one point per minute**, for any day inside the retention period |
+| 3 / 7 / 14 days | one per 6 / 14 / 28 minutes |
+| Custom period up to 24 hours | one point per minute |
 
-Showing every minute of 14 days at once would be 20,160 points in each of eight charts, which a browser cannot
-draw comfortably (it crashed the test browser). Pick a custom period to look at any stretch of the 14 days minute by minute.
+**Other tabs:** Threads (with stack traces in a popup), Memory and GC (Eden, Survivor, Old Gen, Metaspace; collectors), Environment (runtime, OS, database product).
 
-**Other tabs:** Live now (current values), Threads (with stack traces), Memory and GC, Database (connection pool,
-storage activity), Sessions, JMX metrics, System properties.
-
-**History page** (link on the Overview tab): how many samples are stored and from when to when, store a sample now,
-and **demo data**: generate 14 days of synthetic, flagged history so the charts can be tried immediately, and delete it again.
-Demo data fills the time before the oldest real sample, so real and demo data never overlap.
+**History page** (link on the Overview tab): sample count and age, store a sample now, and demo data: 14 days of synthetic, flagged history
+that fills the time before the oldest real sample.
 
 ## Using it in an app
 
@@ -61,17 +56,16 @@ For this repository's demo app steps 2 and 3 are done in `mdlsource/resourcemoni
 
 | Microflow | Use |
 |---|---|
-| `SUB_CaptureSnapshot(IncludeStackTraces, IncludeJmxMetrics)` | Returns a live `Snapshot` with child lists. Call it from your own logic. |
-| `SE_CollectPoint` | The per-minute collector. Can also be called from your own scheduled event. |
+| `SUB_CaptureSnapshot(IncludeDetails)` | Returns a live `Snapshot`. With `IncludeDetails` it also lists threads (with stack traces), memory pools and collectors. |
+| `SE_CollectPoint` | The per-minute collector (numbers only). Can also be called from your own scheduled event. |
 | `ACT_LogSnapshot` | Logs a one-line summary to log node `ResourceMonitor`. |
 
 ## Security
 
 - Everything is restricted to the module role `ResourceMonitor.Admin` (entities, microflows and pages).
-- The module reads JVM and runtime state only. It never reads environment variables.
-- Masked: system properties whose name suggests a secret, `password=`/`token=`/`key=` style values in the JVM arguments
-  and the database URL, and JMX attributes whose name suggests a secret.
-- Stack traces and thread names can still reveal internals. Give the role only to people allowed to see them.
+- The module reads JVM and runtime state only. It never reads environment variables, user names, user agents, JVM arguments,
+  system properties, the database URL or the database user. Sessions are only counted.
+- Thread names and stack traces can still reveal internal class names. Give the role only to people allowed to see them.
 
 ## Limits and notes
 
@@ -79,7 +73,6 @@ For this repository's demo app steps 2 and 3 are done in `mdlsource/resourcemoni
   would hold one point per instance. Disable collection on all but one (`CollectionEnabled`) if that matters.
 - Counters are per runtime start. A restart shows as a gap in the rates, not as a spike.
 - A gap longer than 30 minutes (collector off or app stopped) is not turned into a rate.
-- System load average and open file descriptors are not available on Windows and show empty there.
 - Database pool, storage and web server numbers come from the Mendix runtime's own JMX beans
   (`com.mendix:type=DataStorage`, `JettyThreadPool`, and the DBCP pool). They stay empty if a future runtime renames them;
   the JMX tab always shows what is really published.
@@ -88,8 +81,8 @@ For this repository's demo app steps 2 and 3 are done in `mdlsource/resourcemoni
 
 ## Testing
 
-`tests/resourcemonitor.test.mdl` holds 12 tests that run against the real runtime (live capture, collector, retention,
-minute resolution, buckets, demo data, deletion):
+`tests/resourcemonitor.test.mdl` holds 11 tests that run against the real runtime (live capture with and without details, collector, retention,
+minute resolution, buckets, chart limits, demo data, deletion; run with JAVA_HOME at JDK 25):
 
 ```
 mxcli test tests/resourcemonitor.test.mdl -p MyFirstApp.mpr --local --db-type hsqldb
@@ -109,5 +102,5 @@ mxcli marketplace package ResourceMonitor -p MyFirstApp.mpr -o dist
 
 ## Source
 
-The module is defined by the scripts `mdlsource/resourcemonitor_01..09*.mdl`, applied in order. The Java is in
-`resourcemonitor_02_java.mdl` and `resourcemonitor_07_history_java.mdl`.
+The module is defined by the scripts `mdlsource/resourcemonitor_01..09*.mdl`, applied in order. The Overview redesign is `10_overview_java`, `11_overview_microflows`, `12_overview_page` and `13_overview_cleanup`
+(applied last; they replace the dashboard and drop what is no longer collected). The Java is in `02`, `07` and `10`.

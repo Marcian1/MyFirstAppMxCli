@@ -1,0 +1,602 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Resource Monitor Mockup</title>
+<!--
+  Resource Monitor - static mockup with simulated data. No external libraries.
+
+  Built to translate 1:1 into Mendix + Atlas UI:
+    - Tick "Show Mendix widget map" (top right) to outline every element and see which Mendix widget it becomes.
+    - Colours, spacing, buttons, badges, tabs, grids and form fields follow Atlas Core conventions.
+    - Data shapes mirror the module: ResourcePoint (per-minute history), Snapshot (live), ThreadSample,
+      MemoryPoolSample, GcSample. Chart series names = ChartPoint attributes.
+  Every metric has a documentation popover (hover or focus the "i"). The text lives in one object, DOCS,
+  so it can later become a Metric entity / a Mendix popup page.
+-->
+<style>
+:root{
+  /* Atlas Core brand tokens */
+  --brand-primary:#264AE5; --brand-primary-dark:#1b37b3; --brand-primary-light:#e8ecfd;
+  --brand-success:#3CB33D; --brand-warning:#F99B1D; --brand-danger:#E33F4E; --brand-info:#0CABEA;
+  --gray-darkest:#0A1325; --gray-dark:#3B4256; --gray:#6C7180; --gray-light:#CED0D3; --gray-lighter:#EDEEF0; --gray-lightest:#F5F6F6;
+  --bg:#F5F6F6; --surface:#fff; --border:#CED0D3; --text:#0A1325; --text-muted:#6C7180;
+  --radius:8px; --radius-sm:4px;
+  --font:"Open Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --shadow:0 1px 2px rgba(10,19,37,.08);
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{font-family:var(--font);font-size:14px;line-height:1.45;color:var(--text);background:var(--bg)}
+h1,h2,h3,h4,h5,h6{margin:0;font-weight:600}
+h2{font-size:24px} h5{font-size:15px}
+button{font:inherit;color:inherit}
+code{font-family:ui-monospace,Consolas,monospace;font-size:12px;background:var(--gray-lighter);padding:1px 4px;border-radius:3px}
+
+/* ---- Atlas_Default layout: topbar + sidebar + content ---- */
+.topbar{height:56px;background:var(--gray-darkest);color:#fff;display:flex;align-items:center;padding:0 16px;gap:16px;position:sticky;top:0;z-index:20}
+.topbar .logo{font-weight:700;letter-spacing:.2px}
+.topbar .spacer{flex:1}
+.topbar label{display:flex;align-items:center;gap:6px;font-size:12px;color:#c9cdd6;cursor:pointer}
+.topbar .user{font-size:12px;color:#c9cdd6}
+.shell{display:flex;min-height:calc(100vh - 56px)}
+.sidebar{width:210px;background:var(--surface);border-right:1px solid var(--border);padding:12px 0;flex:none}
+.sidebar a{display:block;padding:9px 20px;color:var(--gray-dark);text-decoration:none;border-left:3px solid transparent}
+.sidebar a.active{color:var(--brand-primary);background:var(--brand-primary-light);border-left-color:var(--brand-primary);font-weight:600}
+.content{flex:1;min-width:0;padding:24px;max-width:1500px}
+@media(max-width:900px){.sidebar{display:none}.content{padding:16px}}
+
+/* ---- Buttons / form (Atlas btn, form-control) ---- */
+.btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border);background:var(--surface);color:var(--gray-darkest);padding:7px 14px;border-radius:var(--radius-sm);cursor:pointer;font-weight:600;font-size:13px}
+.btn:hover{background:var(--gray-lightest)}
+.btn-primary{background:var(--brand-primary);border-color:var(--brand-primary);color:#fff}
+.btn-primary:hover{background:var(--brand-primary-dark)}
+.btn.active{background:var(--brand-primary-light);border-color:var(--brand-primary);color:var(--brand-primary)}
+.btn-group{display:inline-flex;flex-wrap:wrap;gap:6px}
+.btn-link{border:0;background:none;color:var(--brand-primary);padding:7px 4px}
+.form-control{border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;font:inherit;background:#fff;min-width:0;width:100%}
+.form-control:focus,.btn:focus-visible,.info:focus-visible,.tab:focus-visible{outline:2px solid var(--brand-primary);outline-offset:1px}
+.form-control[readonly]{background:var(--gray-lightest);color:var(--gray-dark)}
+.form-group{margin-bottom:12px}
+.form-group>label,.control-label{display:flex;align-items:center;gap:6px;font-weight:600;margin-bottom:4px;font-size:13px}
+textarea.form-control{font-family:ui-monospace,Consolas,monospace;font-size:12px;resize:vertical}
+
+/* ---- Layout grid (12 columns) ---- */
+.row{display:grid;grid-template-columns:repeat(12,1fr);gap:16px}
+.col-3{grid-column:span 3}.col-4{grid-column:span 4}.col-6{grid-column:span 6}.col-8{grid-column:span 8}.col-12{grid-column:span 12}
+@media(max-width:1100px){.col-3{grid-column:span 6}.col-4{grid-column:span 6}.col-6,.col-8{grid-column:span 12}}
+@media(max-width:600px){.col-3,.col-4{grid-column:span 12}}
+.mb{margin-bottom:16px}
+
+/* ---- Cards (Atlas "card" container) ---- */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px}
+.card-head{display:flex;align-items:center;gap:6px;margin-bottom:8px}
+.card-head .sub{margin-left:auto;font-size:12px;color:var(--text-muted)}
+.muted{color:var(--text-muted)} .small{font-size:12px}
+
+/* ---- Info icon + popover (documentation) ---- */
+.info{width:16px;height:16px;border-radius:50%;border:1px solid var(--gray);background:#fff;color:var(--gray);font:700 10px/14px var(--font);padding:0;cursor:help;flex:none;text-align:center;vertical-align:middle}
+.info:hover,.info.open{background:var(--brand-primary);border-color:var(--brand-primary);color:#fff}
+#pop{position:fixed;z-index:60;max-width:340px;background:var(--gray-darkest);color:#fff;border-radius:var(--radius);padding:12px 14px;font-size:12.5px;box-shadow:0 8px 24px rgba(10,19,37,.35);display:none;pointer-events:none}
+#pop h6{font-size:13px;margin-bottom:4px}
+#pop p{margin:0 0 6px;color:#dfe2ea}
+#pop b{color:#fff}
+#pop .src{margin-top:6px;font-family:ui-monospace,Consolas,monospace;font-size:11px;color:#9fb2ff;word-break:break-word}
+#pop .warn{color:#ffd27d}
+
+/* ---- Tab container ---- */
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:16px;overflow-x:auto}
+.tab{border:0;background:none;padding:10px 16px;cursor:pointer;color:var(--gray);font-weight:600;border-bottom:3px solid transparent;white-space:nowrap}
+.tab[aria-selected=true]{color:var(--brand-primary);border-bottom-color:var(--brand-primary)}
+.tabpage[hidden]{display:none}
+
+/* ---- Badges (Atlas label-*) ---- */
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;background:var(--gray-lighter);color:var(--gray-dark)}
+.badge.success{background:#e1f4e1;color:#23802a}.badge.warning{background:#fdebd0;color:#a2600b}.badge.danger{background:#fbe0e3;color:#b0202f}.badge.info{background:#dcf3fc;color:#07688f}
+
+/* ---- KPI tiles ---- */
+.kpi{padding:14px 16px;border-top:4px solid var(--gray-light)}
+.kpi.ok{border-top-color:var(--brand-success)}.kpi.warn{border-top-color:var(--brand-warning)}.kpi.bad{border-top-color:var(--brand-danger)}
+.kpi .label{display:flex;align-items:center;gap:6px;color:var(--text-muted);font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.3px}
+.kpi .value{font-size:26px;font-weight:700;margin:4px 0 0}
+.kpi .value small{font-size:13px;font-weight:600;color:var(--text-muted)}
+.kpi .hint{font-size:12px;color:var(--text-muted)}
+.bar{height:6px;background:var(--gray-lighter);border-radius:3px;overflow:hidden;margin-top:8px}
+.bar>i{display:block;height:100%;background:var(--brand-success)}
+.bar.warn>i{background:var(--brand-warning)}.bar.bad>i{background:var(--brand-danger)}
+
+/* ---- Charts (Time series widget look) ---- */
+.chart{position:relative}
+.legend{display:flex;flex-wrap:wrap;gap:4px 14px;margin:0 0 4px;font-size:12px}
+.legend button{border:0;background:none;display:inline-flex;align-items:center;gap:6px;cursor:pointer;padding:2px 0;color:var(--gray-dark)}
+.legend button.off{opacity:.4;text-decoration:line-through}
+.legend i{width:14px;height:3px;border-radius:2px;display:inline-block}
+.chart svg{display:block;width:100%;height:240px}
+.chart text{font:11px var(--font);fill:var(--gray)}
+.chart .grid{stroke:var(--gray-lighter)}
+.ctip{position:absolute;top:30px;pointer-events:none;background:#fff;border:1px solid var(--border);box-shadow:0 4px 14px rgba(10,19,37,.15);border-radius:6px;padding:8px 10px;font-size:12px;display:none;z-index:5;white-space:nowrap}
+.ctip b{display:block;margin-bottom:3px}
+.ctip span{display:flex;align-items:center;gap:6px;justify-content:space-between}
+.ctip i{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:4px}
+
+/* ---- Data grid 2 ---- */
+.grid-tools{display:flex;gap:12px;align-items:center;margin-bottom:10px}
+.grid-tools .form-control{max-width:280px}
+.table-wrap{overflow:auto;border:1px solid var(--border);border-radius:var(--radius-sm)}
+table.grid{width:100%;border-collapse:collapse;font-size:13px;background:#fff}
+.grid th{background:var(--gray-lightest);text-align:left;font-weight:600;padding:9px 12px;border-bottom:1px solid var(--border);white-space:nowrap;user-select:none}
+.grid th .th{display:inline-flex;align-items:center;gap:6px}
+.grid th button.sort{border:0;background:none;cursor:pointer;font-weight:600;padding:0}
+.grid td{padding:8px 12px;border-bottom:1px solid var(--gray-lighter);vertical-align:middle}
+.grid tr:last-child td{border-bottom:0}
+.grid tbody tr.clickable{cursor:pointer}
+.grid tbody tr:hover{background:var(--brand-primary-light)}
+.grid td.num,.grid th.num{text-align:right}
+.grid-foot{display:flex;align-items:center;gap:8px;justify-content:flex-end;margin-top:10px;font-size:12px;color:var(--text-muted)}
+.mono{font-family:ui-monospace,Consolas,monospace;font-size:12px}
+.ellipsis{max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ---- Modal (Atlas PopupLayout) ---- */
+.backdrop{position:fixed;inset:0;background:rgba(10,19,37,.5);display:none;align-items:center;justify-content:center;z-index:50;padding:16px}
+.backdrop.open{display:flex}
+.modal{background:#fff;border-radius:var(--radius);width:min(760px,100%);max-height:90vh;overflow:auto;box-shadow:0 20px 50px rgba(0,0,0,.4)}
+.modal-head{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center}
+.modal-body{padding:20px}
+.modal-foot{padding:12px 20px;border-top:1px solid var(--border);text-align:right}
+
+details.card summary{cursor:pointer;font-weight:600}
+details table{margin-top:10px}
+
+/* ---- Mendix widget map overlay ---- */
+[data-mx]{position:relative}
+body.mxmap [data-mx]{outline:1.5px dashed #8a3ffc;outline-offset:2px}
+body.mxmap [data-mx]::after{content:attr(data-mx);position:absolute;top:-9px;right:6px;background:#8a3ffc;color:#fff;font:600 10px/1 ui-monospace,Consolas,monospace;padding:3px 5px;border-radius:3px;z-index:8;pointer-events:none;white-space:nowrap}
+</style>
+</head>
+<body>
+
+<header class="topbar" data-mx="Atlas_Default topbar">
+  <span class="logo">My First App</span>
+  <span class="spacer"></span>
+  <label><input type="checkbox" id="mxmap"> Show Mendix widget map</label>
+</header>
+
+<div class="shell">
+<nav class="sidebar" data-mx="Navigation tree (sidebar)">
+  <a href="#">Home</a>
+  <a href="#" class="active">Resource Monitor</a>
+  <a href="#">Administration</a>
+</nav>
+
+<main class="content">
+
+  <!-- Page header: layoutgrid + dynamictext + actionbutton (ResourceMonitor.Dashboard) -->
+  <div class="row mb" data-mx="Layout grid">
+    <div class="col-8">
+      <h2 data-mx="Dynamic text (H2)">Resource Monitor</h2>
+      <div class="muted" id="captured" data-mx="Dynamic text">Captured -</div>
+    </div>
+    <div class="col-4" style="text-align:right">
+      <button class="btn btn-primary" id="refresh" data-mx="Action button (call microflow ACT_Refresh)">&#8635; Refresh</button>
+    </div>
+  </div>
+
+  <div class="tabs" role="tablist" data-mx="Tab container">
+    <button class="tab" role="tab" aria-selected="true" data-tab="overview">Overview</button>
+    <button class="tab" role="tab" aria-selected="false" data-tab="threads">Threads</button>
+    <button class="tab" role="tab" aria-selected="false" data-tab="memory">Memory &amp; GC</button>
+    <button class="tab" role="tab" aria-selected="false" data-tab="env">Environment</button>
+  </div>
+
+  <!-- ================= OVERVIEW ================= -->
+  <section class="tabpage" id="tab-overview">
+    <div class="row mb" id="kpis" data-mx="List view (or Layout grid + Dynamic text)"></div>
+
+    <div class="card mb">
+      <div class="row" style="align-items:end">
+        <div class="col-6">
+          <div class="btn-group" id="ranges" data-mx="Action buttons (ACT_SetRange)"></div>
+          
+        </div>
+        <div class="col-3 form-group" style="margin:0" data-mx="Date picker (CustomFrom)">
+          <label for="from">From</label><input class="form-control" id="from" type="datetime-local">
+        </div>
+        <div class="col-3 form-group" style="margin:0" data-mx="Date picker (CustomTo)">
+          <label for="to">To</label><input class="form-control" id="to" type="datetime-local">
+        </div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <div class="col-8 muted small" id="rangeNote" data-mx="Dynamic text (HistoryNote)"></div>
+        <div class="col-4" style="text-align:right"><button class="btn btn-primary" id="applyCustom" data-mx="Action button (ACT_ApplyCustomRange)">Show this period</button></div>
+      </div>
+    </div>
+
+    <div class="row mb" id="charts"></div>
+
+    <details class="card">
+      <summary>How this page maps to Mendix</summary>
+      <table class="grid">
+        <thead><tr><th>Mockup element</th><th>Mendix widget</th><th>Data source</th></tr></thead>
+        <tbody>
+          <tr><td>KPI tiles</td><td>Layout grid + Dynamic text + Progress bar (or a small Badge widget)</td><td><code>Snapshot</code> (non-persistent, refreshed by JA_Capture)</td></tr>
+          <tr><td>Range buttons</td><td>Action buttons calling microflows</td><td>Sets <code>Snapshot.Range</code></td></tr>
+          <tr><td>From / To</td><td>Date picker</td><td><code>Snapshot.CustomFrom / CustomTo</code></td></tr>
+          <tr><td>Line charts</td><td>Time series (Charts module), one <i>line</i> per series, legend on, static data source</td><td><code>Snapshot_ChartPoint</code> &rarr; <code>ChartPoint</code> attributes</td></tr>
+          <tr><td>Red dashed limit line</td><td>Extra Time series line with a constant attribute (or <code>HeapMaxMb</code>, <code>DbPoolMaxTotal</code>)</td><td><code>ChartPoint</code></td></tr>
+          <tr><td>Thread, memory pool and GC tables</td><td>Data grid 2 (text filter, sortable columns, paging 10)</td><td><code>ThreadSample</code>, <code>MemoryPoolSample</code>, <code>GcSample</code></td></tr>
+          <tr><td>Thread popup</td><td>Page with Atlas PopupLayout and a Data view</td><td><code>ThreadSample</code> parameter</td></tr>
+          <tr><td>Environment fields</td><td>Data view with read-only Text boxes / Text area</td><td><code>Snapshot</code></td></tr>
+          <tr><td>Info "i" popovers</td><td>Pop-up page or a Tooltip widget reading a <code>MetricDoc</code> entity</td><td>The <code>DOCS</code> object in this file</td></tr>
+          <tr><td>Status colours</td><td>Atlas classes <code>label-success/warning/danger</code> set by a class-name expression</td><td>Thresholds from the metric docs</td></tr>
+        </tbody>
+      </table>
+    </details>
+  </section>
+
+  <!-- ================= THREADS ================= -->
+  <section class="tabpage" id="tab-threads" hidden>
+    <div class="card"><div class="card-head"><h5>Threads</h5><button class="info" data-doc="threadTable" aria-label="About threads">i</button><span class="sub" id="threadSub"></span></div>
+    <div id="threadGrid" data-mx="Data grid 2 (ThreadSample)"></div></div>
+  </section>
+
+  <!-- ================= MEMORY & GC ================= -->
+  <section class="tabpage" id="tab-memory" hidden>
+    <div class="card mb"><div class="card-head"><h5>Memory pools</h5><button class="info" data-doc="poolsTable" aria-label="About memory pools">i</button></div>
+    <div id="poolGrid" data-mx="Data grid 2 (MemoryPoolSample)"></div></div>
+    <div class="card"><div class="card-head"><h5>Garbage collectors</h5><button class="info" data-doc="gcTable" aria-label="About garbage collectors">i</button></div>
+    <div id="gcGrid" data-mx="Data grid 2 (GcSample)"></div></div>
+  </section>
+
+  <!-- ================= ENVIRONMENT ================= -->
+  <section class="tabpage" id="tab-env" hidden>
+    <div class="row" id="env" data-mx="Data view (Snapshot) with read-only Text boxes"></div>
+  </section>
+
+</main>
+</div>
+
+<div id="pop" role="tooltip"></div>
+
+<div class="backdrop" id="threadModal" role="dialog" aria-modal="true" aria-labelledby="tmTitle">
+  <div class="modal" data-mx="Page: ThreadSample_Detail (PopupLayout)">
+    <div class="modal-head"><h5 id="tmTitle">Thread</h5></div>
+    <div class="modal-body" id="tmBody"></div>
+    <div class="modal-foot"><button class="btn" id="tmClose">Close</button></div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* =========================================================================================
+   1. DOCUMENTATION  - one entry per metric.  [category, title, what, why, watch, source]
+   ========================================================================================= */
+const DOCS = {
+  cpuProc:["CPU","Process CPU %","Share of the machine's CPU capacity used by the Mendix JVM process.","Separates your app's own load from everything else on the host.","Sustained above 80% means a busy microflow, scheduled event or a tight loop. Peaks matching the 'max' line show short bursts hidden by the average.","OperatingSystemMXBean.getProcessCpuLoad() x 100"],
+  cpuSys:["CPU","System CPU %","CPU usage of the whole machine or container, including other processes.","If system CPU is high but process CPU is low, something else on the host is competing for CPU.","A large gap above process CPU = noisy neighbour or another service on the same server.","OperatingSystemMXBean.getCpuLoad() x 100"],
+  heapUsed:["Memory","Heap used (MB)","Memory holding Java objects, including garbage not collected yet. Your entities, sessions and caches live here.","The key leak detector. Healthy heap is a sawtooth: it climbs, then falls after each garbage collection.","If the bottom of the sawtooth rises after every drop, memory is leaking. Used close to the max line risks an OutOfMemoryError.","MemoryMXBean.getHeapMemoryUsage().getUsed()"],
+  heapCommitted:["Memory","Heap committed (MB)","Heap memory the JVM has reserved from the operating system so far.","Shows how much the JVM has already claimed. It can grow up to the maximum.","Committed constantly growing to max means the JVM keeps asking the OS for more.","MemoryMXBean.getHeapMemoryUsage().getCommitted()"],
+  heapMax:["Memory","Heap max (MB)","The upper limit for the heap, set by -Xmx (a Mendix cloud or Docker setting).","This is the ceiling the used line must stay below. Drawn as the red limit line.","Used above 85% of max for long periods: increase -Xmx or find the leak.","MemoryMXBean.getHeapMemoryUsage().getMax()"],
+  nonHeap:["Memory","Non-heap used (MB)","Memory outside the heap: loaded classes (Metaspace), compiled code, thread stacks.","Grows when many classes are loaded, for example by repeated module reloads or generated code.","Steady growth over days means a class loader leak.","MemoryMXBean.getNonHeapMemoryUsage().getUsed()"],
+  poolActive:["Database","DB connections active","Database connections currently checked out and running a query or transaction.","Every Mendix request needs a connection. When all are busy, requests wait.","Active touching the max line while waiters > 0 is the classic cause of 'the whole app is slow'.","org.apache.commons.pool2:type=GenericObjectPool > NumActive"],
+  poolIdle:["Database","DB connections idle","Pooled connections that are open but not in use.","A healthy pool keeps a few idle connections ready.","Idle at 0 under load means the pool is exhausted.","org.apache.commons.pool2 > NumIdle"],
+  poolWaiters:["Database","DB connection waiters","Requests waiting for a free connection from the pool.","Direct sign of pool starvation. Users feel it as hanging pages.","Anything above 0 for more than a minute: look for long-running transactions or raise ConnectionPoolingMaxActive.","org.apache.commons.pool2 > NumWaiters"],
+  dbPing:["Database","DB ping (ms)","Time for Connection.isValid() on a pooled connection.","Early warning of a slow or distant database before queries visibly slow down.","Above 50 ms on the same network, or a rising trend.","java.sql.Connection.isValid(5), timed in JA_Capture"],
+  webBusy:["Web server","Web threads busy","Jetty threads that are currently handling a request (total minus idle).","Each client request and microflow call occupies one thread while running.","Busy near the max line means the server cannot take more parallel requests.","com.mendix:type=JettyThreadPool > Threads - IdleThreads"],
+  webQueue:["Web server","Web request queue","Requests accepted but waiting for a free web thread.","The queue only fills when every thread is busy, so it is a clear saturation signal.","Any value above 0 that lasts: requests are being delayed.","com.mendix:type=JettyThreadPool > QueueSize"],
+  selects:["Database activity","Selects / min","Database SELECT statements run by the Mendix runtime per minute (counter converted to a rate).","Shows how read-heavy the app is and which minute a heavy page or batch hit the database.","A jump without more users usually means a retrieve inside a loop (N+1).","com.mendix:type=DataStorage > Selects (delta per minute)"],
+  updates:["Database activity","Updates / min","Rows changed per minute.","High updates with few users often means a scheduled event or sync running.","Constant high rate = commit inside a loop.","com.mendix:type=DataStorage > Updates (delta)"],
+  sessTotal:["Users","Active sessions (total)","All sessions currently held in memory.","Each session uses heap, so this matters for capacity planning.","Sessions that never expire grow heap slowly.","Core.getActiveSessions()"],
+  deadlocks:["Threads","Deadlocked threads","Threads waiting forever on locks held by each other.","A deadlock freezes the affected users until restart.","Must be 0. Any other value needs the Threads tab to see who is blocked.","ThreadMXBean.findDeadlockedThreads()"],
+  uptime:["Runtime","Uptime","Time since the JVM started.","A recent start explains a gap, reset counters, and cold caches.","A short uptime that you did not plan = unexpected restart (crash, out-of-memory).","RuntimeMXBean.getUptime()"],
+  threadTable:["Threads","Thread list","All JVM threads at the moment of capture, with state, CPU time and top stack frame. Click a row for the full stack trace.","Answers 'what is the app doing right now?' when it is slow or stuck.","Many BLOCKED threads, or many threads with the same top frame, show the contention point.","ThreadMXBean.dumpAllThreads()"],
+  thState:["Threads","State","RUNNABLE = working. WAITING / TIMED_WAITING = idle or sleeping. BLOCKED = waiting for a lock.","Quickly separates busy threads from parked ones.","BLOCKED with a lock owner = contention; look at the owner's stack.","Thread.State"],
+  thCpu:["Threads","CPU time (ms)","Total processor time this thread has used since it started.","Finds the single thread burning CPU, for example a runaway scheduled event.","One thread far above the rest.","ThreadMXBean.getThreadCpuTime()"],
+  thBlocked:["Threads","Times blocked","How often the thread had to wait to enter a synchronized block.","High counts mean heavy lock contention.","Rapidly increasing values between captures.","ThreadInfo.getBlockedCount()"],
+  thTop:["Threads","Top frame","The Java method the thread is executing right now.","Tells you what code the thread is in without opening the full trace.","Many threads in the same database or socket method = waiting on that resource.","ThreadInfo.getStackTrace()[0]"],
+  poolsTable:["Memory","Memory pools","The JVM's separate memory areas: young generation, old generation, Metaspace, code cache.","Tells you which area is full when the heap or non-heap alarm fires.","Old Gen close to 100% after a collection = real memory pressure. Metaspace growing = class loader leak.","MemoryPoolMXBean"],
+  memUsedPct:["Memory","Used % of max","How full the pool is compared with its limit.","Quick way to rank pools by risk.","Above 85% for long periods.","MemoryUsage.getUsed() / getMax()"],
+  memPeak:["Memory","Peak used (MB)","Highest usage since the JVM started.","Shows how close the pool has ever come to its limit.","Peak close to max even when current use is low = there were near misses.","MemoryPoolMXBean.getPeakUsage()"],
+  gcTable:["Memory","Garbage collectors","Each collector with how many times it ran and how long it spent in total.","Long or frequent GC pauses freeze the application for all users.","Time per collection above 1 s, or GC time above 5% of uptime.","GarbageCollectorMXBean"],
+  gcCount:["Memory","Collections","Number of times this collector has run since start.","Combine with total time to get the average pause.","Frequent old-generation runs.","GarbageCollectorMXBean.getCollectionCount()"],
+  gcTime:["Memory","Total time (ms)","Total time the application was paused by this collector.","The cost of garbage collection for users.","Time per run above 1000 ms.","GarbageCollectorMXBean.getCollectionTime()"],
+  envRuntime:["Runtime","Runtime and Java version","Mendix runtime version and the Java build it runs on.","First thing support asks for. Confirms the right version is deployed.","Unexpected version after a deployment.","Core.getRuntimeVersion(), System.getProperty('java.version')"],
+  envOs:["Runtime","OS and CPUs","Operating system, architecture, processor count and physical memory.","Sizing context for reading every CPU and memory chart.","Heap max far below physical memory, or a very small CPU count.","OperatingSystemMXBean"],
+  envDb:["Database","Database","Product, version, JDBC driver, isolation level and (masked) URL.","Confirms what the app is really connected to.","Wrong database, or an unsupported version.","DatabaseMetaData, Connection.getTransactionIsolation()"],
+};
+
+/* =========================================================================================
+   2. SIMULATED HISTORY - 14 days, one point per minute (ResourcePoint)
+   ========================================================================================= */
+function prng(seed){return()=>{seed|=0;seed=seed+0x6D2B79F5|0;let t=Math.imul(seed^seed>>>15,1|seed);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+const rnd=prng(42), noise=(a)=>(rnd()-.5)*2*a;
+const DAYS=14, N=DAYS*1440;
+const END=Math.floor(Date.now()/60000)*60000, START=END-(N-1)*60000;
+const KEYS=["cpu","sys","heap","comm","nonheap","pool","idle","wait","ping","wbusy","wq","sess","sel","upd"];
+const H={}; KEYS.forEach(k=>H[k]=new Float32Array(N));
+const T=new Float64Array(N);
+const LIM={heapMax:2048,poolMax:50,webMax:254};
+function incident(i){ // two simulated incidents: ~3.5 h ago and 5 days ago
+  const tri=(c,w)=>Math.max(0,1-Math.abs(i-c)/w);
+  return Math.min(1,tri(N-200,22)*1.1+tri(N-5*1440+640,30));
+}
+for(let i=0;i<N;i++){
+  const t=START+i*60000; T[i]=t;
+  const d=new Date(t), hr=d.getHours()+d.getMinutes()/60, wk=(d.getDay()===0||d.getDay()===6)?.35:1;
+  const load=(.12+.88*Math.max(0,Math.sin((hr-6)/12*Math.PI)))*wk, inc=incident(i);
+  const phase=(i%330)/330;
+  H.cpu[i]=Math.max(1,Math.min(99,8+42*load+noise(4)+inc*42));
+  H.sys[i]=Math.min(100,H.cpu[i]+7+noise(3));
+  H.heap[i]=Math.min(2030,520+i/N*140+880*phase*(.6+.4*load)+noise(18)+inc*300);
+  H.comm[i]=Math.max(1536,Math.ceil(H.heap[i]*1.12/64)*64);
+  H.nonheap[i]=190+i/N*25+noise(2);
+  H.pool[i]=Math.min(LIM.poolMax,Math.max(0,Math.round(1+13*load+inc*38+noise(1.5))));
+  H.idle[i]=Math.max(0,Math.round(10-H.pool[i]*.3));
+  H.wait[i]=inc>.5?Math.round((inc-.5)*36):0;
+  H.ping[i]=Math.max(.4,1.3+noise(.5)+inc*38);
+  H.wbusy[i]=Math.max(0,Math.round(2+24*load+inc*150+noise(2)));
+  H.wq[i]=inc>.6?Math.round((inc-.6)*160):0;
+  H.sess[i]=Math.round(6+97*load+noise(3));
+  H.sel[i]=Math.max(0,Math.round(700+9000*load+inc*24000+noise(300)));
+  H.upd[i]=Math.round(H.sel[i]*.10+noise(12));
+}
+
+/* =========================================================================================
+   3. SIMULATED LIVE SNAPSHOT (Snapshot + child samples)
+   ========================================================================================= */
+const THREAD_STACKS=[
+ "java.base/jdk.internal.misc.Unsafe.park(Native Method)\njava.base/java.util.concurrent.locks.LockSupport.park(LockSupport.java:371)\norg.eclipse.jetty.util.thread.QueuedThreadPool.idleJobPoll(QueuedThreadPool.java:1008)",
+ "java.base/sun.nio.ch.EPoll.wait(Native Method)\njava.base/sun.nio.ch.EPollSelectorImpl.doSelect(EPollSelectorImpl.java:121)\norg.eclipse.jetty.io.ManagedSelector.select(ManagedSelector.java:430)",
+ "org.postgresql.core.v3.QueryExecutorImpl.processResults(QueryExecutorImpl.java:2349)\norg.postgresql.jdbc.PgStatement.execute(PgStatement.java:448)\ncom.mendix.connectionbus.ConnectionBus.executeQuery(ConnectionBus.java:512)"
+];
+const th=[]; const states=["RUNNABLE","WAITING","TIMED_WAITING","BLOCKED"];
+const names=["Reference Handler","Finalizer","Signal Dispatcher","Common-Cleaner","Notification Thread","G1 Main Marker","G1 Conc#0","G1 Refine#0","G1 Service","VM Periodic Task Thread","MxRuntime-Scheduler-1","MxRuntime-Scheduler-2","SE_CollectPoint","ActionExecutor-1","ActionExecutor-2","ActionExecutor-3","TaskQueue-default-1","TaskQueue-default-2","ConnectionBus-keepalive","Metrics-flusher","Logging-appender","Session-cleanup","m2ee-admin-8090","qtp1923847-21","qtp1923847-22","qtp1923847-23","qtp1923847-24","qtp1923847-25","qtp1923847-26","qtp1923847-27","qtp1923847-28","qtp1923847-29","qtp1923847-30","qtp1923847-31","qtp1923847-32","qtp1923847-33","Scheduler-OrderSync","Scheduler-Cleanup","Reactor-http-1","Reactor-http-2"];
+names.forEach((n,i)=>{
+  let st=states[i%3===0?0:(i%3===1?1:2)];
+  if(n.startsWith("qtp")) st=i%4===0?"RUNNABLE":"TIMED_WAITING";
+  if(n==="ActionExecutor-3") st="BLOCKED";
+  if(n==="ActionExecutor-2") st="RUNNABLE";
+  const stack=n==="ActionExecutor-3"?"com.mendix.core.actionmanagement.CoreAction.execute(CoreAction.java:88)\ncom.mycompany.orders.Orders.SUB_Recalculate(Orders.java:140)\njava.base/java.lang.Object.wait(Native Method)\n  - waiting to lock <0x000000071a2b3c40> (a java.util.HashMap)":(n==="ActionExecutor-2"?THREAD_STACKS[2]:THREAD_STACKS[i%2]);
+  th.push({id:20+i,name:n,state:st,daemon:!n.startsWith("Scheduler"),prio:5,cpu:Math.round(rnd()*(n==="ActionExecutor-2"?95000:6000)),blocked:n==="ActionExecutor-3"?412:Math.round(rnd()*8),waited:Math.round(rnd()*900),lock:n==="ActionExecutor-3"?"java.util.HashMap@71a2b3c40":"",owner:n==="ActionExecutor-3"?"ActionExecutor-2":"",top:stack.split("\n")[0],stack});
+});
+const pools=[
+ ["G1 Eden Space","HEAP",412,640,-1,1180],["G1 Survivor Space","HEAP",22,64,-1,96],["G1 Old Gen","HEAP",1010,1536,2048,1480],
+ ["Metaspace","NON_HEAP",168,176,-1,170]
+].map(p=>({name:p[0],type:p[1],used:p[2],committed:p[3],max:p[4],peak:p[5],pct:p[4]>0?p[2]*100/p[4]:null}));
+const gcs=[{name:"G1 Young Generation",count:3841,time:92410,pools:"G1 Eden Space, G1 Survivor Space, G1 Old Gen"},{name:"G1 Concurrent GC",count:213,time:4120,pools:"G1 Old Gen"},{name:"G1 Old Generation",count:3,time:2890,pools:"G1 Eden Space, G1 Survivor Space, G1 Old Gen, Metaspace"}];
+
+/* =========================================================================================
+   4. HELPERS
+   ========================================================================================= */
+const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const fmt=(v,d=0)=>v==null||isNaN(v)?"-":Number(v).toLocaleString("en",{minimumFractionDigits:d,maximumFractionDigits:d});
+const infoBtn=k=>DOCS[k]?`<button class="info" data-doc="${k}" aria-label="About ${esc(DOCS[k][1])}">i</button>`:"";
+const dur=s=>{const d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);return (d?d+"d ":"")+h+"h "+m+"m"};
+const last=H=>H[H.length-1];
+
+/* ---- documentation popover: hover, focus or tap ---- */
+const pop=$("#pop"); let popFor=null;
+function showPop(el){
+  const d=DOCS[el.dataset.doc]; if(!d) return;
+  pop.innerHTML=`<h6>${esc(d[1])} <span class="muted" style="color:#9aa3b8;font-weight:400">· ${esc(d[0])}</span></h6><p>${esc(d[2])}</p><p><b>Why it matters:</b> ${esc(d[3])}</p><p class="warn"><b>Watch for:</b> ${esc(d[4])}</p><div class="src">${esc(d[5])}</div>`;
+  pop.style.display="block";
+  const r=el.getBoundingClientRect(), pw=pop.offsetWidth, ph=pop.offsetHeight;
+  let x=Math.min(Math.max(8,r.left-8),innerWidth-pw-8), y=r.bottom+8;
+  if(y+ph>innerHeight-8) y=Math.max(8,r.top-ph-8);
+  pop.style.left=x+"px"; pop.style.top=y+"px"; popFor=el; el.classList.add("open");
+}
+function hidePop(){pop.style.display="none"; if(popFor) popFor.classList.remove("open"); popFor=null}
+document.addEventListener("mouseover",e=>{const el=e.target.closest(".info");if(el)showPop(el)});
+document.addEventListener("mouseout",e=>{if(e.target.closest(".info"))hidePop()});
+document.addEventListener("focusin",e=>{const el=e.target.closest(".info");if(el)showPop(el)});
+document.addEventListener("focusout",e=>{if(e.target.closest(".info"))hidePop()});
+document.addEventListener("click",e=>{const el=e.target.closest(".info");if(el){popFor===el?hidePop():showPop(el)}else hidePop()});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"){hidePop();$("#threadModal").classList.remove("open")}});
+
+/* =========================================================================================
+   5. LINE CHART (stand-in for the Mendix Time series widget)
+   ========================================================================================= */
+function lineChart(host,cfg){
+  const hidden=host._hidden||(host._hidden=new Set());
+  const draw=()=>{
+    const {t,series,limit,unit="",dec=0,yMax}=cfg, n=t.length;
+    const W=Math.max(300,host.clientWidth), Hh=240, m={l:46,r:12,t:8,b:26};
+    const vis=series.filter((_,i)=>!hidden.has(i));
+    let max=yMax||0; vis.forEach(s=>{for(const v of s.v) if(v>max)max=v}); if(limit&&limit.value>max)max=limit.value;
+    const nice=(x)=>{if(x<=0)return 1;const p=Math.pow(10,Math.floor(Math.log10(x))),f=x/p;return (f<=1?1:f<=2?2:f<=2.5?2.5:f<=5?5:10)*p};
+    const top=nice(max*1.05), ticks=[0,1,2,3,4].map(i=>top*i/4);
+    const X=i=>m.l+(n<2?0:(i/(n-1))*(W-m.l-m.r)), Y=v=>Hh-m.b-(v/top)*(Hh-m.t-m.b);
+    let svg=`<svg viewBox="0 0 ${W} ${Hh}" preserveAspectRatio="none" role="img" aria-label="${esc(cfg.title)} chart">`;
+    ticks.forEach(v=>{svg+=`<line class="grid" x1="${m.l}" x2="${W-m.r}" y1="${Y(v)}" y2="${Y(v)}"/><text x="${m.l-6}" y="${Y(v)+4}" text-anchor="end">${fmt(v,top<10?1:0)}</text>`});
+    const span=t[n-1]-t[0], nt=Math.max(2,Math.min(7,Math.floor(W/110)));
+    for(let k=0;k<nt;k++){const i=Math.round(k*(n-1)/(nt-1)), d=new Date(t[i]);
+      const lbl=span>2*86400000?d.toLocaleDateString("en",{day:"2-digit",month:"short"})+" "+d.toLocaleTimeString("en",{hour:"2-digit",minute:"2-digit",hour12:false}):d.toLocaleTimeString("en",{hour:"2-digit",minute:"2-digit",hour12:false});
+      svg+=`<text x="${X(i)}" y="${Hh-8}" text-anchor="${k===0?"start":k===nt-1?"end":"middle"}">${lbl}</text>`}
+    series.forEach((s,si)=>{ if(hidden.has(si))return;
+      let p=""; for(let i=0;i<n;i++) p+=(i?"L":"M")+X(i).toFixed(1)+" "+Y(s.v[i]).toFixed(1);
+      if(s.fill) svg+=`<path d="${p}L${X(n-1)} ${Y(0)}L${X(0)} ${Y(0)}Z" fill="${s.color}" opacity=".13"/>`;
+      svg+=`<path d="${p}" fill="none" stroke="${s.color}" stroke-width="1.8" ${s.dash?'stroke-dasharray="5 4"':""} vector-effect="non-scaling-stroke"/>`});
+    if(limit) svg+=`<line x1="${m.l}" x2="${W-m.r}" y1="${Y(limit.value)}" y2="${Y(limit.value)}" stroke="var(--brand-danger)" stroke-dasharray="6 4" stroke-width="1.4"/><text x="${W-m.r-4}" y="${Y(limit.value)-5}" text-anchor="end" style="fill:var(--brand-danger)">${esc(limit.label)}</text>`;
+    svg+=`<line id="cx" y1="${m.t}" y2="${Hh-m.b}" stroke="var(--gray)" stroke-width="1" style="display:none"/><rect x="${m.l}" y="0" width="${W-m.l-m.r}" height="${Hh-m.b}" fill="transparent" id="ov"/></svg>`;
+    host.querySelector(".plot").innerHTML=svg+`<div class="ctip"></div>`;
+    const ov=host.querySelector("#ov"), cx=host.querySelector("#cx"), tip=host.querySelector(".ctip");
+    ov.addEventListener("mousemove",ev=>{
+      const r=ov.getBoundingClientRect(), i=Math.max(0,Math.min(n-1,Math.round((ev.clientX-r.left)/r.width*(n-1))));
+      cx.setAttribute("x1",X(i));cx.setAttribute("x2",X(i));cx.style.display="";
+      tip.innerHTML=`<b>${new Date(t[i]).toLocaleString("en",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit",hour12:false})}</b>`+vis.map(s=>`<span><em style="font-style:normal"><i style="background:${s.color}"></i>${esc(s.name)}</em><strong style="margin-left:14px">${fmt(s.v[i],dec)}${unit}</strong></span>`).join("");
+      tip.style.display="block";
+      const px=ev.clientX-host.getBoundingClientRect().left;
+      tip.style.left=(px>host.clientWidth/2?px-tip.offsetWidth-14:px+14)+"px";
+    });
+    ov.addEventListener("mouseleave",()=>{cx.style.display="none";tip.style.display="none"});
+  };
+  if(!host.querySelector(".legend")){
+    host.innerHTML=`<div class="legend" data-mx="Time series legend"></div><div class="plot"></div>`;
+    host.querySelector(".legend").innerHTML=cfg.series.map((s,i)=>`<button data-i="${i}">${s.doc?"":""}<i style="background:${s.color}"></i>${esc(s.name)}</button>`).join("");
+    host.querySelector(".legend").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;const i=+b.dataset.i;hidden.has(i)?hidden.delete(i):hidden.add(i);b.classList.toggle("off");draw()});
+  }
+  host._draw=draw; draw();
+}
+
+/* =========================================================================================
+   6. DATA GRID (stand-in for Data grid 2): search, sort, page of 10
+   ========================================================================================= */
+function dataGrid(host,{cols,rows,onRow,page=10,search=true}){
+  let q="",sk=null,sd=1,pg=0;
+  const view=()=>{
+    let r=rows.filter(x=>!q||cols.some(c=>String(c.text?c.text(x):x[c.key]).toLowerCase().includes(q)));
+    if(sk){const c=cols.find(c=>c.key===sk);const g=x=>c.sort?c.sort(x):x[c.key];r=[...r].sort((a,b)=>{const A=g(a),B=g(b);return (A>B?1:A<B?-1:0)*sd})}
+    return r;
+  };
+  const paint=()=>{
+    const r=view(), pages=Math.max(1,Math.ceil(r.length/page)); pg=Math.min(pg,pages-1);
+    const slice=r.slice(pg*page,pg*page+page);
+    host.innerHTML=(search?`<div class="grid-tools"><input class="form-control" placeholder="Search..." value="${esc(q)}" aria-label="Search"></div>`:"")+
+    `<div class="table-wrap"><table class="grid"><thead><tr>${cols.map(c=>`<th class="${c.num?"num":""}"><span class="th"><button class="sort" data-k="${c.key}">${esc(c.label)}${sk===c.key?(sd>0?" ▲":" ▼"):""}</button>${infoBtn(c.doc)}</span></th>`).join("")}</tr></thead>
+    <tbody>${slice.map((x,i)=>`<tr data-i="${rows.indexOf(x)}" class="${onRow?"clickable":""}">${cols.map(c=>`<td class="${c.num?"num":""} ${c.cls||""}">${c.render?c.render(x):esc(x[c.key])}</td>`).join("")}</tr>`).join("")||`<tr><td colspan="${cols.length}" class="muted">No results</td></tr>`}</tbody></table></div>
+    <div class="grid-foot"><span>${r.length?pg*page+1:0} to ${Math.min(r.length,pg*page+page)} of ${r.length}</span><button class="btn" data-p="-1" ${pg===0?"disabled":""}>&lsaquo;</button><button class="btn" data-p="1" ${pg>=pages-1?"disabled":""}>&rsaquo;</button></div>`;
+    const inp=$("input",host); if(inp){inp.addEventListener("input",e=>{q=e.target.value.toLowerCase();pg=0;const pos=e.target.selectionStart;paint();const n=$("input",host);n.focus();n.setSelectionRange(pos,pos)})}
+    $$("button.sort",host).forEach(b=>b.onclick=()=>{sk===b.dataset.k?sd=-sd:(sk=b.dataset.k,sd=1);paint()});
+    $$("button[data-p]",host).forEach(b=>b.onclick=()=>{pg+=+b.dataset.p;paint()});
+    if(onRow) $$("tbody tr[data-i]",host).forEach(tr=>tr.onclick=()=>onRow(rows[+tr.dataset.i]));
+  };
+  paint();
+}
+
+/* =========================================================================================
+   7. PAGE: KPIs, range, charts
+   ========================================================================================= */
+let live={};
+function readLive(jit){
+  const i=N-1, j=v=>jit?v*(1+(rnd()-.5)*.04):v;
+  live={cpu:j(H.cpu[i]),heap:j(H.heap[i]),pool:Math.round(j(H.pool[i])),wq:H.wq[i],sess:H.sess[i],dead:0,up:11*86400+7*3600+23*60};
+}
+function tile(cls,label,doc,value,unit,hint,pct){
+  return `<div class="col-4"><div class="card kpi ${cls}" data-mx="Dynamic text + Progress bar"><div class="label">${esc(label)}${infoBtn(doc)}</div><div class="value">${value}<small> ${unit}</small></div><div class="hint">${hint}</div>${pct==null?"":`<div class="bar ${cls==="bad"?"bad":cls==="warn"?"warn":""}"><i style="width:${Math.min(100,pct)}%"></i></div>`}</div></div>`;
+}
+function renderKpis(){
+  const heapPct=live.heap/LIM.heapMax*100, poolPct=live.pool/LIM.poolMax*100;
+  const tone=(v,w,b)=>v>=b?"bad":v>=w?"warn":"ok";
+  $("#kpis").innerHTML=
+   tile(tone(live.cpu,70,90),"Process CPU","cpuProc",fmt(live.cpu,1),"%","System "+fmt(H.sys[N-1],1)+"%",live.cpu)+
+   tile(tone(heapPct,75,90),"Heap used","heapUsed",fmt(live.heap),"MB","of "+fmt(LIM.heapMax)+" MB ("+fmt(heapPct)+"%)",heapPct)+
+   tile(tone(poolPct,70,90),"DB connections","poolActive",live.pool,"/ "+LIM.poolMax,"waiters: "+H.wait[N-1],poolPct)+
+   tile(live.wq>0?"bad":"ok","Web request queue","webQueue",live.wq,"requests",live.wq?"Requests are waiting":"No waiting requests",null)+
+   tile("ok","Active sessions","sessTotal",live.sess,"","Signed-in and anonymous",null)+
+   tile(live.dead?"bad":"ok","Deadlocked threads","deadlocks",live.dead,"",live.dead?"Open Threads tab":"None detected",null);
+}
+
+const RANGES=[["1h","1 hour",60,1],["6h","6 hours",360,1],["24h","24 hours",1440,2],["3d","3 days",4320,6],["7d","7 days",10080,14],["14d","14 days",20160,28]];
+const state={range:"24h",from:null,to:null};
+function window_(){
+  if(state.from!=null){const a=Math.max(0,Math.round((state.from-START)/60000)),b=Math.min(N-1,Math.round((state.to-START)/60000));const len=b-a+1;return {a,b,bucket:len<=1440?1:Math.ceil(len/1440),label:"Custom period"}}
+  const r=RANGES.find(r=>r[0]===state.range), len=r[2];
+  return {a:N-len,b:N-1,bucket:r[3],label:"Last "+r[1]};
+}
+function bucketize(key,w,agg){
+  const out=[],t=[];
+  for(let s=w.a;s<=w.b;s+=w.bucket){
+    const e=Math.min(w.b,s+w.bucket-1);let sum=0,mx=-Infinity;
+    for(let i=s;i<=e;i++){const v=H[key][i];sum+=v;if(v>mx)mx=v}
+    out.push(agg==="max"?mx:sum/(e-s+1)); t.push(T[s]);
+  }
+  return {v:out,t};
+}
+const C={blue:"#264AE5",cyan:"#0CABEA",green:"#3CB33D",orange:"#F99B1D",red:"#E33F4E",purple:"#8a3ffc",gray:"#6C7180"};
+const CHARTS=[
+ {id:"cpu",title:"CPU",doc:"cpuProc",unit:"%",dec:1,yMax:100,series:[["Process CPU (avg)","cpu",C.blue,"avg",1],["System CPU (avg)","sys",C.gray,"avg"]]},
+ {id:"mem",title:"Memory (heap)",doc:"heapUsed",unit:" MB",limit:{value:LIM.heapMax,label:"Heap max (-Xmx)"},series:[["Heap used","heap",C.blue,"avg",1],["Heap committed","comm",C.gray,"avg",0,1],["Non-heap used","nonheap",C.purple,"avg"]]},
+ {id:"pool",title:"Database connections",doc:"poolActive",unit:"",limit:{value:LIM.poolMax,label:"Pool max"},series:[["Active","pool",C.blue,"avg",1],["Idle","idle",C.green,"avg"],["Waiters","wait",C.red,"max"]]},
+ {id:"web",title:"Web server threads",doc:"webBusy",unit:"",limit:{value:LIM.webMax,label:"Max threads"},series:[["Busy threads","wbusy",C.blue,"avg",1],["Queued requests","wq",C.red,"max"]]},
+ {id:"ops",title:"Database activity per minute",doc:"selects",unit:"",series:[["Selects","sel",C.blue,"avg"],["Updates","upd",C.orange,"avg"]]},
+ {id:"sess",title:"Sessions",doc:"sessTotal",unit:"",series:[["Active sessions","sess",C.blue,"avg",1]]}
+];
+function buildChartShells(){
+  $("#charts").innerHTML=CHARTS.map(c=>`<div class="col-6"><div class="card" data-mx="Container + Dynamic text (H5)"><div class="card-head"><h5>${esc(c.title)}</h5>${infoBtn(c.doc)}</div><div class="chart" id="ch-${c.id}" data-mx="Time series"></div><div class="small muted" style="margin-top:6px">${c.series.map(s=>{const d=DOCSOF[s[1]];return d?`${esc(s[0])} ${infoBtn(d)}`:""}).join(" &nbsp; ")}</div></div></div>`).join("");
+}
+const DOCSOF={cpu:"cpuProc",sys:"cpuSys",heap:"heapUsed",comm:"heapCommitted",nonheap:"nonHeap",pool:"poolActive",idle:"poolIdle",wait:"poolWaiters",wbusy:"webBusy",wq:"webQueue",sel:"selects",upd:"updates",sess:"sessTotal"};
+function drawCharts(){
+  const w=window_(), pts=Math.ceil((w.b-w.a+1)/w.bucket);
+  $("#rangeNote").textContent=`Showing ${w.label.toLowerCase()} · ${fmt(pts)} points (${w.bucket===1?"one per minute":"average of "+w.bucket+" minutes"}; queue and waiter peaks use the maximum).`;
+  CHARTS.forEach(c=>{
+    const host=$("#ch-"+c.id); let t=null;
+    const series=c.series.map(s=>{const b=bucketize(s[1],w,s[3]);t=b.t;return {name:s[0],v:b.v,color:s[2],fill:!!s[4],dash:!!s[5]}});
+    if(!host.querySelector(".legend")) host._hidden=new Set();
+    lineChart(host,{title:c.title,t,series,unit:c.unit,dec:c.dec||0,limit:c.limit,yMax:c.yMax});
+    host._cfg={title:c.title,t,series,unit:c.unit,dec:c.dec||0,limit:c.limit,yMax:c.yMax};
+  });
+}
+function rebuildCharts(){CHARTS.forEach(c=>{const h=$("#ch-"+c.id);h.innerHTML="";});drawCharts()}
+
+function renderRangeButtons(){
+  $("#ranges").innerHTML=RANGES.map(r=>`<button class="btn ${state.from==null&&state.range===r[0]?"active":""}" data-r="${r[0]}">${r[1]}</button>`).join("");
+  $$("#ranges .btn").forEach(b=>b.onclick=()=>{state.range=b.dataset.r;state.from=state.to=null;renderRangeButtons();rebuildCharts()});
+}
+const toLocalInput=ms=>{const d=new Date(ms-new Date(ms).getTimezoneOffset()*60000);return d.toISOString().slice(0,16)};
+$("#from").value=toLocalInput(END-3*3600000);$("#to").value=toLocalInput(END);
+$("#applyCustom").onclick=()=>{
+  let a=new Date($("#from").value).getTime(),b=new Date($("#to").value).getTime();
+  if(!(a<b)){alert("The From time must be before the To time.");return}
+  state.from=Math.max(a,START);state.to=Math.min(b,END);renderRangeButtons();rebuildCharts();
+};
+
+/* =========================================================================================
+   8. TABS AND OTHER GRIDS
+   ========================================================================================= */
+const badgeFor={RUNNABLE:"success",WAITING:"",TIMED_WAITING:"info",BLOCKED:"danger"};
+function setupGrids(){
+  $("#threadSub").textContent=th.length+" threads · "+th.filter(t=>t.state==="BLOCKED").length+" blocked";
+  dataGrid($("#threadGrid"),{rows:th,onRow:openThread,cols:[
+    {key:"name",label:"Name",doc:"threadTable",render:t=>`<span class="mono">${esc(t.name)}</span>`},
+    {key:"state",label:"State",doc:"thState",render:t=>`<span class="badge ${badgeFor[t.state]}">${t.state}</span>`},
+    {key:"cpu",label:"CPU time (ms)",doc:"thCpu",num:1,render:t=>fmt(t.cpu)},
+    {key:"blocked",label:"Times blocked",doc:"thBlocked",num:1,render:t=>fmt(t.blocked)},
+    {key:"top",label:"Top frame",doc:"thTop",render:t=>`<div class="ellipsis mono" title="${esc(t.top)}">${esc(t.top)}</div>`}]});
+  dataGrid($("#poolGrid"),{rows:pools,page:10,cols:[
+    {key:"name",label:"Pool",doc:"poolsTable"},{key:"type",label:"Type",render:p=>`<span class="badge">${p.type}</span>`},
+    {key:"used",label:"Used (MB)",num:1,render:p=>fmt(p.used,1)},{key:"committed",label:"Committed (MB)",num:1,render:p=>fmt(p.committed,1)},
+    {key:"max",label:"Max (MB)",num:1,render:p=>p.max>0?fmt(p.max,1):"-"},{key:"peak",label:"Peak used (MB)",doc:"memPeak",num:1,render:p=>fmt(p.peak,1)},
+    {key:"pct",label:"Used % of max",doc:"memUsedPct",num:1,render:p=>p.pct==null?"-":`<span class="badge ${p.pct>85?"danger":p.pct>70?"warning":"success"}">${fmt(p.pct)}%</span>`,sort:p=>p.pct??-1}]});
+  dataGrid($("#gcGrid"),{rows:gcs,search:false,cols:[
+    {key:"name",label:"Collector",doc:"gcTable"},{key:"count",label:"Collections",doc:"gcCount",num:1,render:g=>fmt(g.count)},
+    {key:"time",label:"Total time (ms)",doc:"gcTime",num:1,render:g=>fmt(g.time)},
+    {key:"avg",label:"Avg per run (ms)",num:1,render:g=>fmt(g.time/g.count,1),sort:g=>g.time/g.count},{key:"pools",label:"Memory pools"}]});
+}
+function field(label,val,doc,col=4){return `<div class="col-${col} form-group"><label>${esc(label)}${infoBtn(doc)}</label><input class="form-control" readonly value="${esc(val)}"></div>`}
+function setupEnv(){
+  $("#env").innerHTML=
+   `<div class="col-12"><div class="card"><h5 class="mb">Runtime</h5><div class="row">`+
+   field("Mendix runtime","11.15.0","envRuntime")+field("Java version","25.0.1 (Eclipse Adoptium)","envRuntime")+field("JVM","OpenJDK 64-Bit Server VM 25.0.1+8","envRuntime")+
+   field("JVM started",new Date(END-live.up*1000).toLocaleString("en"),"uptime")+
+   `</div></div></div>`+
+   `<div class="col-6"><div class="card"><h5 class="mb">Operating system</h5><div class="row">`+field("OS","Linux 6.1 (amd64)","envOs",6)+field("Processors","8","envOs",6)+field("Physical memory","16,384 MB (5,120 MB free)","envOs",6)+field("Disk free","182,400 of 512,000 MB","envOs",6)+`</div></div></div>`+
+   `<div class="col-6"><div class="card"><h5 class="mb">Database</h5><div class="row">`+field("Product","PostgreSQL 16.4","envDb",6)+field("Driver","PostgreSQL JDBC 42.7.3","envDb",6)+field("Isolation","READ_COMMITTED","envDb",6)+`</div></div></div>`;
+}
+function openThread(t){
+  $("#tmTitle").textContent=t.name;
+  const f=(l,v)=>`<div class="col-4 form-group"><label>${l}</label><input class="form-control" readonly value="${esc(v)}"></div>`;
+  $("#tmBody").innerHTML=`<div class="row">${f("Thread id",t.id)}${f("State",t.state)}${f("Daemon",t.daemon?"Yes":"No")}${f("Priority",t.prio)}${f("CPU time (ms)",fmt(t.cpu))}${f("Times blocked / waited",t.blocked+" / "+t.waited)}</div>
+   ${t.lock?`<div class="form-group"><label>Blocked on lock</label><input class="form-control" readonly value="${esc(t.lock)}"></div><div class="form-group"><label>Lock owner</label><input class="form-control" readonly value="${esc(t.owner)}"></div>`:""}
+   <div class="form-group"><label>Stack trace</label><textarea class="form-control" rows="8" readonly>${esc(t.stack.split("\n").map(l=>l.startsWith("  -")?l:"at "+l).join("\n"))}</textarea></div>`;
+  $("#threadModal").classList.add("open");
+}
+$("#tmClose").onclick=()=>$("#threadModal").classList.remove("open");
+$("#threadModal").addEventListener("click",e=>{if(e.target.id==="threadModal")e.currentTarget.classList.remove("open")});
+
+$$(".tab").forEach(b=>b.onclick=()=>{
+  $$(".tab").forEach(x=>x.setAttribute("aria-selected",x===b));
+  $$(".tabpage").forEach(p=>p.hidden=p.id!=="tab-"+b.dataset.tab);
+  if(b.dataset.tab==="overview") $$(".chart").forEach(h=>h._draw&&h._draw());
+});
+
+$("#mxmap").onchange=e=>document.body.classList.toggle("mxmap",e.target.checked);
+$("#refresh").onclick=()=>{readLive(true);renderKpis();stamp(Math.round(40+rnd()*60))};
+function stamp(ms){$("#captured").textContent=`Captured ${new Date().toLocaleTimeString("en",{hour12:false})} in ${ms} ms. Values are a point in time; press Refresh to capture again. History is stored every minute (14 days kept).`}
+
+/* ---- init ---- */
+readLive(false); renderKpis(); stamp(63); renderRangeButtons(); buildChartShells(); drawCharts(); setupGrids(); setupEnv();
+let rz; addEventListener("resize",()=>{clearTimeout(rz);rz=setTimeout(()=>$$(".chart").forEach(h=>h._draw&&h._draw()),120)});
+</script>
+</body>
+</html>

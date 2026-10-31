@@ -1,0 +1,346 @@
+mdl 1;
+
+-- Overview redesign, step 3 of 3: the Dashboard page, rebuilt to match docs/ResourceMonitor_mockup.html.
+-- Tabs: Overview (status tiles, range controls, six charts), Threads, Memory and GC, Environment.
+-- Every metric has an "i" Tooltip widget with its documentation. Styling classes (rm-*) live in themesource/resourcemonitor/web/main.scss.
+
+create or modify page ResourceMonitor.Dashboard
+(
+  title: 'Resource Monitor',
+  layout: Atlas_Core.Atlas_Default
+)
+{
+  layoutgrid gridRoot { row { column (desktopwidth: autofill) {
+  dataview dvSnapshot (datasource: microflow ResourceMonitor.DS_Snapshot) {
+    layoutgrid gridHeader {
+      row {
+        column (desktopwidth: 8) {
+          dynamictext txtTitle (content: 'Resource Monitor', rendermode: H2)
+          dynamictext txtCaptured (content: 'Captured {1} in {2} ms. Values are a point in time; press Refresh to capture again. History is stored every minute.', contentparams: ({1} = CapturedAt, {2} = CaptureDurationMs), Class: 'rm-hint')
+        }
+        column (desktopwidth: 4) {
+          container ctnRefresh (Class: 'rm-right') {
+            actionbutton btnRefresh (caption: 'Refresh', action: call microflow ResourceMonitor.ACT_Refresh(Snapshot = $currentObject), buttonstyle: primary, icon: 'Atlas_Core.Atlas_Filled.refresh')
+          }
+        }
+      }
+    }
+
+    tabcontainer tabs {
+      tabpage tabCharts (caption: 'Overview') {
+        layoutgrid gridKpi1 {
+          row {
+            column (desktopwidth: 4) {
+              container k1 (Class: 'rm-card rm-kpi', DynamicClasses: if $currentObject/ProcessCpuLoadPercent >= 90 then 'rm-bad' else if $currentObject/ProcessCpuLoadPercent >= 70 then 'rm-warn' else 'rm-ok') {
+                container kh2 (Class: 'rm-kpi-head') {
+                  dynamictext kl3 (content: 'Process CPU', Class: 'rm-kpi-label')
+                  tooltip tt4 (renderMethod: 'text', textMessage: 'Share of the machine CPU used by the Mendix process. Why it matters: separates your app load from other software on the same host. Watch for: sustained above 80 percent means a busy microflow, scheduled event or loop. Source: OperatingSystemMXBean.getProcessCpuLoad', tooltipPosition: 'bottom', openOn: 'hoverFocus') {
+                    trigger tt4t { dynamictext tt4i (content: 'i', Class: 'rm-info') }
+                  }
+                }
+                dynamictext kv5 (content: '{1} %', contentparams: ({1} = ProcessCpuLoadPercent), Class: 'rm-kpi-value')
+                dynamictext kt6 (content: 'System CPU {1} %', contentparams: ({1} = SystemCpuLoadPercent), Class: 'rm-hint')
+                progressbar pb7 (type: 'expression', expressionCurrentValue: '$currentObject/ProcessCpuLoadPercent', expressionMinValue: '0', expressionMaxValue: '100')
+              }
+            }
+            column (desktopwidth: 4) {
+              container k8 (Class: 'rm-card rm-kpi', DynamicClasses: if $currentObject/HeapUsedMb * 100 div $currentObject/HeapMaxMb >= 90 then 'rm-bad' else if $currentObject/HeapUsedMb * 100 div $currentObject/HeapMaxMb >= 75 then 'rm-warn' else 'rm-ok') {
+                container kh9 (Class: 'rm-kpi-head') {
+                  dynamictext kl10 (content: 'Heap used', Class: 'rm-kpi-label')
+                  tooltip tt11 (renderMethod: 'text', textMessage: 'Memory holding Java objects, including garbage not collected yet. Why it matters: the main memory leak detector. Watch for: used memory that keeps climbing after each garbage collection, or sits near the maximum (OutOfMemoryError risk). Source: MemoryMXBean heap usage', tooltipPosition: 'bottom', openOn: 'hoverFocus') {
+                    trigger tt11t { dynamictext tt11i (content: 'i', Class: 'rm-info') }
+                  }
+                }
+                dynamictext kv12 (content: '{1} MB', contentparams: ({1} = HeapUsedMb), Class: 'rm-kpi-value')
+                dynamictext kt13 (content: 'of {1} MB maximum', contentparams: ({1} = HeapMaxMb), Class: 'rm-hint')
+                progressbar pb14 (type: 'expression', expressionCurrentValue: '$currentObject/HeapUsedMb * 100 div $currentObject/HeapMaxMb', expressionMinValue: '0', expressionMaxValue: '100')
+              }
+            }
+            column (desktopwidth: 4) {
+              container k15 (Class: 'rm-card rm-kpi', DynamicClasses: if $currentObject/DbPoolActive * 100 div $currentObject/DbPoolMaxTotal >= 90 then 'rm-bad' else if $currentObject/DbPoolActive * 100 div $currentObject/DbPoolMaxTotal >= 70 then 'rm-warn' else 'rm-ok') {
+                container kh16 (Class: 'rm-kpi-head') {
+                  dynamictext kl17 (content: 'DB connections', Class: 'rm-kpi-label')
+                  tooltip tt18 (renderMethod: 'text', textMessage: 'Database connections in use out of the pool size. Why it matters: every request needs a connection and waits when all are busy. Watch for: active at the maximum with waiters above 0 is the classic cause of a slow app. Source: commons-pool2 GenericObjectPool NumActive and MaxTotal', tooltipPosition: 'bottom', openOn: 'hoverFocus') {
+                    trigger tt18t { dynamictext tt18i (content: 'i', Class: 'rm-info') }
+                  }
+                }
+                dynamictext kv19 (content: '{1} of {2}', contentparams: ({1} = DbPoolActive, {2} = DbPoolMaxTotal), Class: 'rm-kpi-value')
+                dynamictext kt20 (content: '{1} waiting for a connection', contentparams: ({1} = DbPoolWaiters), Class: 'rm-hint')
+                progressbar pb21 (type: 'expression', expressionCurrentValue: '$currentObject/DbPoolActive * 100 div $currentObject/DbPoolMaxTotal', expressionMinValue: '0', expressionMaxValue: '100')
+              }
+            }
+          }
+        }
+        layoutgrid gridKpi2 {
+          row {
+            column (desktopwidth: 4) {
+              container k22 (Class: 'rm-card rm-kpi', DynamicClasses: if $currentObject/WebQueueSize > 0 then 'rm-bad' else 'rm-ok') {
+                container kh23 (Class: 'rm-kpi-head') {
+                  dynamictext kl24 (content: 'Web request queue', Class: 'rm-kpi-label')
+                  tooltip tt25 (renderMethod: 'text', textMessage: 'Requests accepted but waiting for a free web server thread. Why it matters: the queue only fills when every thread is busy, so it is a clear saturation signal. Watch for: any value above 0 that lasts. Source: com.mendix:type=JettyThreadPool QueueSize', tooltipPosition: 'bottom', openOn: 'hoverFocus') {
+                    trigger tt25t { dynamictext tt25i (content: 'i', Class: 'rm-info') }
+                  }
+                }
+                dynamictext kv26 (content: '{1}', contentparams: ({1} = WebQueueSize), Class: 'rm-kpi-value')
+                dynamictext kt27 (content: 'requests waiting for a web thread', Class: 'rm-hint')
+              }
+            }
+            column (desktopwidth: 4) {
+              container k28 (Class: 'rm-card rm-kpi', DynamicClasses: 'rm-ok') {
+                container kh29 (Class: 'rm-kpi-head') {
+                  dynamictext kl30 (content: 'Active sessions', Class: 'rm-kpi-label')
+                  tooltip tt31 (renderMethod: 'text', textMessage: 'User sessions currently held in memory, signed in and anonymous. Why it matters: each session uses heap, so this relates load to the number of users. Watch for: sessions that never expire, or sudden growth from bots. Source: Core.getActiveSessions', tooltipPosition: 'bottom', openOn: 'hoverFocus') {
+                    trigger tt31t { dynamictext tt31i (content: 'i', Class: 'rm-info') }
+                  }
+                }
+                dynamictext kv32 (content: '{1}', contentparams: ({1} = ActiveSessions), Class: 'rm-kpi-value')
+                dynamictext kt33 (content: 'signed-in and anonymous', Class: 'rm-hint')
+              }
+            }
+            column (desktopwidth: 4) {
+              container k34 (Class: 'rm-card rm-kpi', DynamicClasses: if $currentObject/DeadlockedThreadCount > 0 then 'rm-bad' else 'rm-ok') {
+                container kh35 (Class: 'rm-kpi-head') {
+                  dynamictext kl36 (content: 'Deadlocked threads', Class: 'rm-kpi-label')
+                  tooltip tt37 (renderMethod: 'text', textMessage: 'Threads waiting forever on locks held by each other. Why it matters: a deadlock freezes the affected users until a restart. Watch for: must be 0; if not, open the Threads tab. Source: ThreadMXBean.findDeadlockedThreads', tooltipPosition: 'bottom', openOn: 'hoverFocus') {
+                    trigger tt37t { dynamictext tt37i (content: 'i', Class: 'rm-info') }
+                  }
+                }
+                dynamictext kv38 (content: '{1}', contentparams: ({1} = DeadlockedThreadCount), Class: 'rm-kpi-value')
+                dynamictext kt39 (content: '0 is healthy; see the Threads tab', Class: 'rm-hint')
+              }
+            }
+          }
+        }
+        container ctnRange (Class: 'rm-card rm-range') {
+          container ctnRangeButtons (Class: 'rm-range-buttons') {
+            actionbutton b40 (caption: '1 hour', action: call microflow ResourceMonitor.ACT_SetRange(Snapshot = $currentObject, Range = ResourceMonitor.ChartRange.Last1h), DynamicClasses: if $currentObject/Range = ResourceMonitor.ChartRange.Last1h then 'rm-active' else '')
+            actionbutton b41 (caption: '6 hours', action: call microflow ResourceMonitor.ACT_SetRange(Snapshot = $currentObject, Range = ResourceMonitor.ChartRange.Last6h), DynamicClasses: if $currentObject/Range = ResourceMonitor.ChartRange.Last6h then 'rm-active' else '')
+            actionbutton b42 (caption: '24 hours', action: call microflow ResourceMonitor.ACT_SetRange(Snapshot = $currentObject, Range = ResourceMonitor.ChartRange.Last24h), DynamicClasses: if $currentObject/Range = ResourceMonitor.ChartRange.Last24h then 'rm-active' else '')
+            actionbutton b43 (caption: '3 days', action: call microflow ResourceMonitor.ACT_SetRange(Snapshot = $currentObject, Range = ResourceMonitor.ChartRange.Last3d), DynamicClasses: if $currentObject/Range = ResourceMonitor.ChartRange.Last3d then 'rm-active' else '')
+            actionbutton b44 (caption: '7 days', action: call microflow ResourceMonitor.ACT_SetRange(Snapshot = $currentObject, Range = ResourceMonitor.ChartRange.Last7d), DynamicClasses: if $currentObject/Range = ResourceMonitor.ChartRange.Last7d then 'rm-active' else '')
+            actionbutton b45 (caption: '14 days', action: call microflow ResourceMonitor.ACT_SetRange(Snapshot = $currentObject, Range = ResourceMonitor.ChartRange.Last14d), DynamicClasses: if $currentObject/Range = ResourceMonitor.ChartRange.Last14d then 'rm-active' else '')
+          }
+          layoutgrid gridCustom {
+            row {
+              column (desktopwidth: 3) {
+                datepicker dpFrom (label: 'From', attribute: CustomFrom, DateFormat: DateTime)
+              }
+              column (desktopwidth: 3) {
+                datepicker dpTo (label: 'To', attribute: CustomTo, DateFormat: DateTime)
+              }
+              column (desktopwidth: 6) {
+                container ctnApply (Class: 'rm-right rm-apply') {
+                  actionbutton btnApply (caption: 'Show this period', action: call microflow ResourceMonitor.ACT_ApplyCustomRange(Snapshot = $currentObject), buttonstyle: primary)
+                }
+              }
+            }
+          }
+          dynamictext txtRange (content: 'Showing {1}. {2} A period of up to 24 hours shows one point per minute.', contentparams: ({1} = Range, {2} = HistoryNote), Class: 'rm-hint')
+          linkbutton lnkHistory (caption: 'History settings and demo data', action: show page ResourceMonitor.History)
+        }
+        layoutgrid gridCharts {
+          row {
+            column (desktopwidth: 6) {
+              container c48 (Class: 'rm-card') {
+                container h49 (Class: 'rm-card-head') {
+                  dynamictext t50 (content: 'CPU', rendermode: H5)
+                  tooltip tt51 (renderMethod: 'text', textMessage: 'Process CPU is the Mendix process; System CPU is the whole machine. If system is high but process is low, another program is competing for CPU. Source: OperatingSystemMXBean getProcessCpuLoad and getCpuLoad', tooltipPosition: 'bottom', openOn: 'hoverFocus') {
+                    trigger tt51t { dynamictext tt51i (content: 'i', Class: 'rm-info') }
+                  }
+                }
+                timeseries ts52 (showLegend: true, showRangeSlider: false, gridLines: horizontal, heightUnit: pixels, height: 250, yAxisLabel: '%') {
+                  line l46 (dataSet: static, staticDataSource: $currentObject/ResourceMonitor.Snapshot_ChartPoint, staticName: 'Process CPU (avg)', staticXAttribute: Timestamp, staticYAttribute: ProcessCpuAvg, enableFillArea: true, lineStyle: custom, lineColor: '#264AE5')
+                  line l47 (dataSet: static, staticDataSource: $currentObject/ResourceMonitor.Snapshot_ChartPoint, staticName: 'System CPU (avg)', staticXAttribute: Timestamp, staticYAttribute: SystemCpuAvg, enableFillArea: false, lineStyle: custom, lineColor: '#6C7180')
+                }
+              }
+            }
+            column (desktopwidth: 6) {
+              container c57 (Class: 'rm-card') {
+                container h58 (Class: 'rm-card-head') {
+                  dynamictext t59 (content: 'Memory (heap)', rendermode: H5)
+                  tooltip tt60 (renderMethod: 'text', textMessage: 'Heap used is the line to watch: a healthy heap is a sawtooth that falls after each garbage collection, and a rising floor means a leak. Heap committed is what the JVM has reserved; non-heap holds classes and compiled code; the red dashed line is the heap maximum (Xmx). Source: MemoryMXBean', tooltipPosition: 'bottom', openOn: 'hoverFocus') {
+                    trigger tt60t { dynamictext tt60i (content: 'i', Class: 'rm-info') }
+                  }
+                }
+                timeseries ts61 (showLegend: true, showRangeSlider: false, gridLines: horizontal, heightUnit: pixels, height: 250, yAxisLabel: 'MB') {
+                  line l53 (dataSet: static, staticDataSource: $currentObject/ResourceMonitor.Snapshot_ChartPoint, staticName: 'Heap used', staticXAttribute: Timestamp, staticYAttribute: HeapUsedMb, enableFillArea: true, lineStyle: custom, lineColor: '#264AE5')
+                  line l54 (dataSet: static, staticDataSource: $currentObject/ResourceMonitor.Snapshot_ChartPoint, staticName: 'Heap committed', staticXAttribute: Timestamp, staticYAttribute: HeapCommittedMb, enableFillArea: false, lineStyle: custom, lineColor: '#6C7180')
+                  line l55 (dataSet: static, staticDataSource: $currentObject/ResourceMonitor.Snapshot_ChartPoint, staticName: 'Non-heap used', staticXAttribute: Timestamp, staticYAttribute: NonHeapUsedMb, enableFillArea: false, lineStyle: custom, lineColor: '#8A3FFC')
+                  line l56 (dataSet: static, staticDataSource: $currentObject/ResourceMonitor.Snapshot_ChartPoint, staticName: 'Heap max (Xmx)', staticXAttribute: Timestamp, staticYAttribute: HeapMaxMb, enableFillArea: false, lineStyle: custom, lineColor: '#E33F4E', customSeriesOptions: '{"line":{"dash":"dash","width":1.5}}')
+                }
+              }
+            }
+          }
+          row {
+            column (desktopwidth: 6) {
+              container c66 (Class: 'rm-card') {
+                container h67 (Class: 'rm-card-head') {
+                  dynamictext t68 (content: 'Database connections', rendermode: H5)
+                  tooltip tt69 (renderMethod: 'text', textMessage: 'Active connections run queries now; idle ones are open and ready; waiters are requests waiting for a connection (peak per point). The red dashed line is the pool size. Waiters above 0 mean the pool is exhausted. Source: commons-pool2 GenericObjectPool', tooltipPosition: 'bottom', openOn: 'hoverFocus') {
+                    trigger tt69t { dynamictext tt69i (content: 'i', Class: 'rm-info') }
+                  }
+                }
+                timeseries ts70 (showLegend: true, showRangeSlider: false, gridLines: horizontal, heightUnit: pixels, height: 250, yAxisLabel: 'connections') {
+                  line l62 (dataSet: static, staticDataSource: $currentObject/ResourceMonitor.Snapshot_ChartPoint, staticName: 'Active', staticXAttribute: Timestamp, staticYAttribute: PoolActive, enableFillArea: true, lineStyle: custom, lineColor: '#264AE5')
+                  line l63 (dataSet: static, staticDataSource: $currentObject/ResourceMonitor.Snapshot_ChartPoint, staticName: 'Idle', staticXAttribute: Timestamp, staticYAttribute: PoolIdle, enableFillArea: false, lineStyle: custom, lineColor: '#3CB33D')
+                  line l64 (dataSet: static, staticDataSource: $currentObject/ResourceMonitor.Snapshot_ChartPoint, staticName: 'Waiters (peak)', staticXAttribute: Timestamp, staticYAttribute: PoolWaiters, enableFillArea: false, lineStyle: custom, lineColor: '#F99B1D')
+                  line l65 (dataSet: static, staticDataSource: $currentObject/ResourceMonitor.Snapshot_ChartPoint, staticName: 'Pool size', staticXAttribute: Timestamp, staticYAttribute: PoolMaxConnections, enableFillArea: false, lineStyle: custom, lineColor: '#E33F4E', customSeriesOptions: '{"line":{"dash":"dash","width":1.5}}')
+                }
+              }
+            }
+            column (desktopwidth: 6) {
+              container c74 (Class: 'rm-card') {
+                container h75 (Class: 'rm-card-head') {
+                  dynamictext t76 (content: 'Web server threads', rendermode: H5)
+                  tooltip tt77 (renderMethod: 'text', textMessage: 'Busy threads are handling a request; queued requests wait for a thread (peak per point). The red dashed line is the maximum number of web threads. Source: com.mendix:type=JettyThreadPool', tooltipPosition: 'bottom', openOn: 'hoverFocus') {
+                    trigger tt77t { dynamictext tt77i (content: 'i', Class: 'rm-info') }
+                  }
+                }
+                timeseries ts78 (showLegend: true, showRangeSlider: false, gridLines: horizontal, heightUnit: pixels, height: 250, yAxisLabel: 'threads') {
+                  line l71 (dataSet: static, staticDataSource: $currentObject/ResourceMonitor.Snapshot_ChartPoint, staticName: 'Busy threads', staticXAttribute: Timestamp, staticYAttribute: WebBusyThreads, enableFillArea: true, lineStyle: custom, lineColor: '#264AE5')
+                  line l72 (dataSet: static, staticDataSource: $currentObject/ResourceMonitor.Snapshot_ChartPoint, staticName: 'Queued requests (peak)', staticXAttribute: Timestamp, staticYAttribute: WebQueue, enableFillArea: false, lineStyle: custom, lineColor: '#F99B1D')
+                  line l73 (dataSet: static, staticDataSource: $currentObject/ResourceMonitor.Snapshot_ChartPoint, staticName: 'Max threads', staticXAttribute: Timestamp, staticYAttribute: WebMaxThreads, enableFillArea: false, lineStyle: custom, lineColor: '#E33F4E', customSeriesOptions: '{"line":{"dash":"dash","width":1.5}}')
+                }
+              }
+            }
+          }
+          row {
+            column (desktopwidth: 6) {
+              container c81 (Class: 'rm-card') {
+                container h82 (Class: 'rm-card-head') {
+                  dynamictext t83 (content: 'Database activity per minute', rendermode: H5)
+                  tooltip tt84 (renderMethod: 'text', textMessage: 'Database SELECT and UPDATE statements run by the Mendix runtime per minute. A jump without more users usually means a retrieve inside a loop; steady high updates with few users points to a scheduled event or sync. Source: com.mendix:type=DataStorage Selects and Updates, counter converted to a rate', tooltipPosition: 'bottom', openOn: 'hoverFocus') {
+                    trigger tt84t { dynamictext tt84i (content: 'i', Class: 'rm-info') }
+                  }
+                }
+                timeseries ts85 (showLegend: true, showRangeSlider: false, gridLines: horizontal, heightUnit: pixels, height: 250, yAxisLabel: 'per minute') {
+                  line l79 (dataSet: static, staticDataSource: $currentObject/ResourceMonitor.Snapshot_ChartPoint, staticName: 'Selects', staticXAttribute: Timestamp, staticYAttribute: SelectsPerMin, enableFillArea: true, lineStyle: custom, lineColor: '#264AE5')
+                  line l80 (dataSet: static, staticDataSource: $currentObject/ResourceMonitor.Snapshot_ChartPoint, staticName: 'Updates', staticXAttribute: Timestamp, staticYAttribute: UpdatesPerMin, enableFillArea: false, lineStyle: custom, lineColor: '#F99B1D')
+                }
+              }
+            }
+            column (desktopwidth: 6) {
+              container c87 (Class: 'rm-card') {
+                container h88 (Class: 'rm-card-head') {
+                  dynamictext t89 (content: 'Sessions', rendermode: H5)
+                  tooltip tt90 (renderMethod: 'text', textMessage: 'Sessions held in memory over time. Compare with the CPU and memory charts to see how much load comes from users. Source: Core.getActiveSessions', tooltipPosition: 'bottom', openOn: 'hoverFocus') {
+                    trigger tt90t { dynamictext tt90i (content: 'i', Class: 'rm-info') }
+                  }
+                }
+                timeseries ts91 (showLegend: true, showRangeSlider: false, gridLines: horizontal, heightUnit: pixels, height: 250, yAxisLabel: 'sessions') {
+                  line l86 (dataSet: static, staticDataSource: $currentObject/ResourceMonitor.Snapshot_ChartPoint, staticName: 'Active sessions', staticXAttribute: Timestamp, staticYAttribute: Sessions, enableFillArea: true, lineStyle: custom, lineColor: '#264AE5')
+                }
+              }
+            }
+          }
+        }
+      }
+
+      tabpage tabThreads (caption: 'Threads') {
+        container ctnThreads (Class: 'rm-card') {
+          container ctnThreadsHead (Class: 'rm-card-head') {
+            dynamictext txtThreadsTitle (content: 'Threads', rendermode: H5)
+            tooltip tt92 (renderMethod: 'text', textMessage: 'Every JVM thread at the moment of capture. BLOCKED threads wait for a lock; many threads with the same top frame show the contention point. Open Stack for the full stack trace. Source: ThreadMXBean.dumpAllThreads', tooltipPosition: 'bottom', openOn: 'hoverFocus') {
+              trigger tt92t { dynamictext tt92i (content: 'i', Class: 'rm-info') }
+            }
+            dynamictext txtThreadsSub (content: '{1} threads, {2} deadlocked', contentparams: ({1} = ThreadCount, {2} = DeadlockedThreadCount), Class: 'rm-hint')
+          }
+          textarea taDead (label: 'Deadlocked threads', attribute: DeadlockedThreads, editable: Never, visible: $currentObject/DeadlockedThreadCount > 0)
+          datagrid gridThreads (datasource: $currentObject/ResourceMonitor.Snapshot_ThreadSample, PagingPosition: both, PageSize: 10) {
+            column (attribute: Name, caption: 'Name') {
+              textfilter tfThreadName
+            }
+            column (attribute: State, caption: 'State') {
+              textfilter tfThreadState
+            }
+            column (attribute: CpuTimeMs, caption: 'CPU time (ms)') {
+              numberfilter nfCpu
+            }
+            column (attribute: BlockedCount, caption: 'Times blocked') {
+              numberfilter nfBlocked
+            }
+            column (attribute: TopFrame, caption: 'Top frame') {
+              textfilter tfTop
+            }
+            column (caption: 'Details') {
+              actionbutton btnStack (caption: 'Stack', action: show page ResourceMonitor.ThreadSample_Detail(ThreadSample = $currentObject))
+            }
+          }
+        }
+      }
+
+      tabpage tabMemory (caption: 'Memory and GC') {
+        container ctnPools (Class: 'rm-card') {
+          container ctnPoolsHead (Class: 'rm-card-head') {
+            dynamictext txtPools (content: 'Memory pools', rendermode: H5)
+            tooltip tt93 (renderMethod: 'text', textMessage: 'The JVM memory areas. Old Gen close to 100 percent after a collection is real memory pressure; Metaspace that keeps growing means a class loader leak. Source: MemoryPoolMXBean', tooltipPosition: 'bottom', openOn: 'hoverFocus') {
+              trigger tt93t { dynamictext tt93i (content: 'i', Class: 'rm-info') }
+            }
+          }
+          datagrid gridPools (datasource: $currentObject/ResourceMonitor.Snapshot_MemoryPoolSample) {
+            column (attribute: Name, caption: 'Pool')
+            column (attribute: PoolType, caption: 'Type')
+            column (attribute: UsedMb, caption: 'Used (MB)')
+            column (attribute: CommittedMb, caption: 'Committed (MB)')
+            column (attribute: MaxMb, caption: 'Max (MB)')
+            column (attribute: PeakUsedMb, caption: 'Peak used (MB)')
+            column (attribute: UsedPercentOfMax, caption: 'Used % of max')
+          }
+        }
+        container ctnGc (Class: 'rm-card') {
+          container ctnGcHead (Class: 'rm-card-head') {
+            dynamictext txtGc (content: 'Garbage collectors', rendermode: H5)
+            tooltip tt94 (renderMethod: 'text', textMessage: 'Garbage collectors with how often they ran and how long they paused the application in total. Watch for a long average pause (over 1 second) or GC time above 5 percent of uptime. Source: GarbageCollectorMXBean', tooltipPosition: 'bottom', openOn: 'hoverFocus') {
+              trigger tt94t { dynamictext tt94i (content: 'i', Class: 'rm-info') }
+            }
+          }
+          datagrid gridGc (datasource: $currentObject/ResourceMonitor.Snapshot_GcSample) {
+            column (attribute: Name, caption: 'Collector')
+            column (attribute: CollectionCount, caption: 'Collections')
+            column (attribute: CollectionTimeMs, caption: 'Total time (ms)')
+            column (attribute: MemoryPools, caption: 'Memory pools')
+          }
+        }
+      }
+
+      tabpage tabEnv (caption: 'Environment') {
+        layoutgrid gridEnv {
+          row {
+            column (desktopwidth: 4) {
+              groupbox gbRuntime (caption: 'Runtime') {
+                textbox tbRtVersion (label: 'Mendix runtime', attribute: MendixRuntimeVersion, editable: Never)
+                textbox tbJavaVer (label: 'Java version', attribute: JavaVersion, editable: Never)
+                textbox tbJvm (label: 'JVM', attribute: JvmName, editable: Never)
+                datepicker dpStarted (label: 'JVM started', attribute: JvmStartedAt, DateFormat: DateTime, editable: Never)
+              }
+            }
+            column (desktopwidth: 4) {
+              groupbox gbOs (caption: 'Operating system') {
+                textbox tbOs (label: 'OS', attribute: OsName, editable: Never)
+                textbox tbArch (label: 'Architecture', attribute: OsArch, editable: Never)
+                textbox tbCpus (label: 'Processors', attribute: AvailableProcessors, editable: Never)
+                textbox tbPhysTotal (label: 'Physical memory (MB)', attribute: PhysicalMemoryTotalMb, editable: Never)
+                textbox tbPhysFree (label: 'Physical memory free (MB)', attribute: PhysicalMemoryFreeMb, editable: Never)
+                textbox tbDiskFree (label: 'Disk free (MB)', attribute: DiskFreeMb, editable: Never)
+              }
+            }
+            column (desktopwidth: 4) {
+              groupbox gbDb (caption: 'Database') {
+                textbox tbDbProduct (label: 'Product', attribute: DbProductName, editable: Never)
+                textbox tbDbVersion (label: 'Version', attribute: DbProductVersion, editable: Never)
+                textbox tbDbDriver (label: 'JDBC driver', attribute: DbDriverName, editable: Never)
+                textbox tbDbDriverVer (label: 'Driver version', attribute: DbDriverVersion, editable: Never)
+                textbox tbDbIso (label: 'Transaction isolation', attribute: DbTransactionIsolation, editable: Never)
+                textbox tbDbPing (label: 'Connection check (ms)', attribute: DbPingMs, editable: Never)
+                textbox tbDbError (label: 'Error', attribute: DbError, editable: Never, visible: $currentObject/DbError != empty)
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  } } }
+};
+
+GRANT VIEW ON PAGE ResourceMonitor.Dashboard TO ResourceMonitor.Admin;

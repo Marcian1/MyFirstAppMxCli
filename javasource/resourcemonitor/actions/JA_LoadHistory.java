@@ -14,7 +14,7 @@ import com.mendix.systemwideinterfaces.core.IMendixObject;
 import com.mendix.systemwideinterfaces.core.UserAction;
 
 /**
- * Fills the snapshot's ChartPoint list from the stored per-minute history between FromTime and ToTime, grouped into at most MaxBuckets time buckets. Gauges are averaged per bucket (CPU, heap, threads, pool and sessions also keep the maximum); runtime counters become per-minute rates.
+ * Fills the snapshot's ChartPoint list from the stored per-minute history between FromTime and ToTime, grouped into at most MaxBuckets time buckets. Gauges are averaged per bucket, except the web request queue and the database connection waiters, which keep the bucket maximum so a short spike is not averaged away; database counters become per-minute rates. The pool and web thread limits are taken from the snapshot so the charts can draw a limit line.
  */
 public class JA_LoadHistory extends UserAction<java.lang.Boolean>
 {
@@ -70,9 +70,8 @@ public class JA_LoadHistory extends UserAction<java.lang.Boolean>
 		final int nBuckets = (int) ((rangeMin * 60_000L) / bucketMs) + 1;
 		
 		final String[] G = {"ProcessCpuPct", "SystemCpuPct", "HeapUsedMb", "HeapCommittedMb", "HeapMaxMb", "NonHeapUsedMb",
-		  "PhysicalFreeMb", "Threads", "DaemonThreads", "WebThreads", "WebIdleThreads", "WebQueue",
-		  "PoolActive", "PoolIdle", "PoolWaiters", "DbPingMs", "Sessions"};
-		final String[] T = {"GcCountTotal", "GcTimeMsTotal", "SelectsTotal", "InsertsTotal", "UpdatesTotal", "DeletesTotal", "TransactionsTotal"};
+		  "WebThreads", "WebIdleThreads", "WebQueue", "PoolActive", "PoolIdle", "PoolWaiters", "Sessions"};
+		final String[] T = {"SelectsTotal", "UpdatesTotal"};
 		final double[][] gSum = new double[nBuckets][G.length];
 		final double[][] gMax = new double[nBuckets][G.length];
 		final int[][] gCnt = new int[nBuckets][G.length];
@@ -136,6 +135,13 @@ public class JA_LoadHistory extends UserAction<java.lang.Boolean>
 		  offset += page;
 		}
 		
+		final java.util.function.Function<Double, java.math.BigDecimal> dec = d -> d == null || d.isNaN() || d.isInfinite() ? null
+		    : java.math.BigDecimal.valueOf(d).setScale(2, java.math.RoundingMode.HALF_UP);
+		final Object poolLimit = snap.getValue(ctx, "DbPoolMaxTotal");
+		final Object webLimit = snap.getValue(ctx, "WebThreadsMax");
+		final java.math.BigDecimal poolMax = poolLimit instanceof Number ? dec.apply(((Number) poolLimit).doubleValue()) : null;
+		final java.math.BigDecimal webMax = webLimit instanceof Number ? dec.apply(((Number) webLimit).doubleValue()) : null;
+		
 		final java.util.List<com.mendix.systemwideinterfaces.core.IMendixIdentifier> ids = new java.util.ArrayList<>();
 		for (int b = 0; b < nBuckets; b++) {
 		  if (pts[b] == 0) continue;
@@ -145,39 +151,24 @@ public class JA_LoadHistory extends UserAction<java.lang.Boolean>
 		  final java.util.function.IntFunction<Double> avg = i -> gCnt[bb][i] == 0 ? null : gSum[bb][i] / gCnt[bb][i];
 		  final java.util.function.IntFunction<Double> max = i -> gCnt[bb][i] == 0 ? null : gMax[bb][i];
 		  final java.util.function.IntFunction<Double> rate = i -> rCnt[bb][i] == 0 ? null : rSum[bb][i] / rCnt[bb][i];
-		  final java.util.function.Function<Double, java.math.BigDecimal> dec = d -> d == null || d.isNaN() || d.isInfinite() ? null
-		      : java.math.BigDecimal.valueOf(d).setScale(2, java.math.RoundingMode.HALF_UP);
 		  o.setValue(ctx, "ProcessCpuAvg", dec.apply(avg.apply(0)));
-		  o.setValue(ctx, "ProcessCpuMax", dec.apply(max.apply(0)));
 		  o.setValue(ctx, "SystemCpuAvg", dec.apply(avg.apply(1)));
 		  o.setValue(ctx, "HeapUsedMb", dec.apply(avg.apply(2)));
-		  o.setValue(ctx, "HeapUsedMaxMb", dec.apply(max.apply(2)));
 		  o.setValue(ctx, "HeapCommittedMb", dec.apply(avg.apply(3)));
 		  o.setValue(ctx, "HeapMaxMb", dec.apply(avg.apply(4)));
 		  o.setValue(ctx, "NonHeapUsedMb", dec.apply(avg.apply(5)));
-		  o.setValue(ctx, "PhysicalFreeMb", dec.apply(avg.apply(6)));
-		  o.setValue(ctx, "Threads", dec.apply(avg.apply(7)));
-		  o.setValue(ctx, "ThreadsMax", dec.apply(max.apply(7)));
-		  o.setValue(ctx, "DaemonThreads", dec.apply(avg.apply(8)));
-		  o.setValue(ctx, "WebThreads", dec.apply(avg.apply(9)));
-		  Double webTotal = avg.apply(9);
-		  Double webIdle = avg.apply(10);
+		  Double webTotal = avg.apply(6);
+		  Double webIdle = avg.apply(7);
 		  o.setValue(ctx, "WebBusyThreads", webTotal == null || webIdle == null ? null : dec.apply(Math.max(0.0, webTotal - webIdle)));
-		  o.setValue(ctx, "WebQueue", dec.apply(avg.apply(11)));
-		  o.setValue(ctx, "PoolActive", dec.apply(avg.apply(12)));
-		  o.setValue(ctx, "PoolActiveMax", dec.apply(max.apply(12)));
-		  o.setValue(ctx, "PoolIdle", dec.apply(avg.apply(13)));
-		  o.setValue(ctx, "PoolWaiters", dec.apply(avg.apply(14)));
-		  o.setValue(ctx, "DbPingMs", dec.apply(avg.apply(15)));
-		  o.setValue(ctx, "Sessions", dec.apply(avg.apply(16)));
-		  o.setValue(ctx, "SessionsMax", dec.apply(max.apply(16)));
-		  o.setValue(ctx, "GcCountPerMin", dec.apply(rate.apply(0)));
-		  o.setValue(ctx, "GcTimeMsPerMin", dec.apply(rate.apply(1)));
-		  o.setValue(ctx, "SelectsPerMin", dec.apply(rate.apply(2)));
-		  o.setValue(ctx, "InsertsPerMin", dec.apply(rate.apply(3)));
-		  o.setValue(ctx, "UpdatesPerMin", dec.apply(rate.apply(4)));
-		  o.setValue(ctx, "DeletesPerMin", dec.apply(rate.apply(5)));
-		  o.setValue(ctx, "TransactionsPerMin", dec.apply(rate.apply(6)));
+		  o.setValue(ctx, "WebQueue", dec.apply(max.apply(8)));
+		  o.setValue(ctx, "PoolActive", dec.apply(avg.apply(9)));
+		  o.setValue(ctx, "PoolIdle", dec.apply(avg.apply(10)));
+		  o.setValue(ctx, "PoolWaiters", dec.apply(max.apply(11)));
+		  o.setValue(ctx, "Sessions", dec.apply(avg.apply(12)));
+		  o.setValue(ctx, "SelectsPerMin", dec.apply(rate.apply(0)));
+		  o.setValue(ctx, "UpdatesPerMin", dec.apply(rate.apply(1)));
+		  o.setValue(ctx, "PoolMaxConnections", poolMax);
+		  o.setValue(ctx, "WebMaxThreads", webMax);
 		  ids.add(o.getId());
 		}
 		snap.setValue(ctx, assoc, ids);

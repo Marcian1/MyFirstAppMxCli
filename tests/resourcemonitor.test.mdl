@@ -8,9 +8,9 @@
  * @expect $Snapshot/ThreadCount > 0
  * @expect $Snapshot/HeapUsedMb > 0
  * @expect $Snapshot/AvailableProcessors >= 1
- * @expect $Snapshot/UptimeSeconds >= 0
+ * @expect $Snapshot/ActiveSessions >= 0
  */
-$Snapshot = call microflow ResourceMonitor.SUB_CaptureSnapshot(IncludeStackTraces = false, IncludeJmxMetrics = false);
+$Snapshot = call microflow ResourceMonitor.SUB_CaptureSnapshot(IncludeDetails = false);
 /
 
 /**
@@ -19,51 +19,42 @@ $Snapshot = call microflow ResourceMonitor.SUB_CaptureSnapshot(IncludeStackTrace
  * @expect $Snapshot/DbProductName != empty
  * @expect $Snapshot/DbPingMs >= 0
  */
-$Snapshot = call microflow ResourceMonitor.SUB_CaptureSnapshot(IncludeStackTraces = false, IncludeJmxMetrics = false);
+$Snapshot = call microflow ResourceMonitor.SUB_CaptureSnapshot(IncludeDetails = false);
 /
 
 /**
- * @test the data storage and web server counters are read from JMX
- * @expect $Snapshot/DbTransactions >= 0
+ * @test the data storage, web server and connection pool numbers are read from JMX
+ * @expect $Snapshot/DbSelects >= 0
  * @expect $Snapshot/WebThreadsMax > 0
  * @expect $Snapshot/DbPoolMaxTotal > 0
  */
-$Snapshot = call microflow ResourceMonitor.SUB_CaptureSnapshot(IncludeStackTraces = false, IncludeJmxMetrics = false);
+$Snapshot = call microflow ResourceMonitor.SUB_CaptureSnapshot(IncludeDetails = false);
 /
 
 /**
- * @test every live thread has a sample and stack traces are only kept when asked for
- * @expect count($WithStacks) > 0
+ * @test thread, memory pool and collector lists are only built when details are asked for, and threads carry stack traces
+ * @expect count($LightThreads) = 0
+ * @expect count($LightPools) = 0
  * @expect count($Threads) > 0
- */
-$Snapshot = call microflow ResourceMonitor.SUB_CaptureSnapshot(IncludeStackTraces = false, IncludeJmxMetrics = false);
-retrieve $Threads from $Snapshot/ResourceMonitor.Snapshot_ThreadSample;
-$Deep = call microflow ResourceMonitor.SUB_CaptureSnapshot(IncludeStackTraces = true, IncludeJmxMetrics = false);
-retrieve $WithStacks from $Deep/ResourceMonitor.Snapshot_ThreadSample where StackTrace != empty;
-/
-
-/**
- * @test memory pools, garbage collectors and system properties are listed, JMX only when requested
+ * @expect count($WithStacks) > 0
  * @expect count($Pools) > 0
  * @expect count($Collectors) > 0
- * @expect count($Props) > 0
- * @expect count($NoJmx) = 0
- * @expect count($Jmx) > 0
  */
-$Snapshot = call microflow ResourceMonitor.SUB_CaptureSnapshot(IncludeStackTraces = false, IncludeJmxMetrics = false);
-retrieve $Pools from $Snapshot/ResourceMonitor.Snapshot_MemoryPoolSample;
-retrieve $Collectors from $Snapshot/ResourceMonitor.Snapshot_GcSample;
-retrieve $Props from $Snapshot/ResourceMonitor.Snapshot_SystemPropertySample;
-retrieve $NoJmx from $Snapshot/ResourceMonitor.Snapshot_MetricSample;
-$WithJmx = call microflow ResourceMonitor.SUB_CaptureSnapshot(IncludeStackTraces = false, IncludeJmxMetrics = true);
-retrieve $Jmx from $WithJmx/ResourceMonitor.Snapshot_MetricSample;
+$Light = call microflow ResourceMonitor.SUB_CaptureSnapshot(IncludeDetails = false);
+retrieve $LightThreads from $Light/ResourceMonitor.Snapshot_ThreadSample;
+retrieve $LightPools from $Light/ResourceMonitor.Snapshot_MemoryPoolSample;
+$Deep = call microflow ResourceMonitor.SUB_CaptureSnapshot(IncludeDetails = true);
+retrieve $Threads from $Deep/ResourceMonitor.Snapshot_ThreadSample;
+retrieve $WithStacks from $Deep/ResourceMonitor.Snapshot_ThreadSample where StackTrace != empty;
+retrieve $Pools from $Deep/ResourceMonitor.Snapshot_MemoryPoolSample;
+retrieve $Collectors from $Deep/ResourceMonitor.Snapshot_GcSample;
 /
 
 /**
  * @test refreshing a snapshot replaces its samples instead of piling them up
  * @expect count($After) = count($Before)
  */
-$Snapshot = call microflow ResourceMonitor.SUB_CaptureSnapshot(IncludeStackTraces = false, IncludeJmxMetrics = false);
+$Snapshot = call microflow ResourceMonitor.SUB_CaptureSnapshot(IncludeDetails = true);
 retrieve $Before from $Snapshot/ResourceMonitor.Snapshot_GcSample;
 $Done = call microflow ResourceMonitor.ACT_Refresh(Snapshot = $Snapshot);
 retrieve $After from $Snapshot/ResourceMonitor.Snapshot_GcSample;
@@ -85,17 +76,19 @@ retrieve $Real from ResourceMonitor.ResourcePoint where IsDemo = false;
 /
 
 /**
- * @test one day of demo history is minute by minute and charts load from it
+ * @test one day of demo history is minute by minute and charts load from it, with the pool and web limits for the limit lines
  * @expect $Created >= 1440
  * @expect count($Points) >= 1440
  * @expect $Snapshot/BucketMinutes = 1
  * @expect count($Chart) > 0
+ * @expect count($WithLimits) > 0
  */
 $Created = call java action ResourceMonitor.JA_GenerateDemoHistory(Days = 1);
 retrieve $Points from ResourceMonitor.ResourcePoint where IsDemo = true;
-$Snapshot = call microflow ResourceMonitor.SUB_CaptureSnapshot(IncludeStackTraces = false, IncludeJmxMetrics = false);
+$Snapshot = call microflow ResourceMonitor.SUB_CaptureSnapshot(IncludeDetails = false);
 $Snapshot2 = call microflow ResourceMonitor.ACT_SetRange(Snapshot = $Snapshot, Range = ResourceMonitor.ChartRange.Last1h);
 retrieve $Chart from $Snapshot/ResourceMonitor.Snapshot_ChartPoint;
+retrieve $WithLimits from $Snapshot/ResourceMonitor.Snapshot_ChartPoint where PoolMaxConnections > 0 and WebMaxThreads > 0;
 /
 
 /**
@@ -105,7 +98,7 @@ retrieve $Chart from $Snapshot/ResourceMonitor.Snapshot_ChartPoint;
  * @expect count($Chart) <= 720
  */
 $Created = call java action ResourceMonitor.JA_GenerateDemoHistory(Days = 14);
-$Snapshot = call microflow ResourceMonitor.SUB_CaptureSnapshot(IncludeStackTraces = false, IncludeJmxMetrics = false);
+$Snapshot = call microflow ResourceMonitor.SUB_CaptureSnapshot(IncludeDetails = false);
 $Done = call microflow ResourceMonitor.ACT_SetRange(Snapshot = $Snapshot, Range = ResourceMonitor.ChartRange.Last14d);
 retrieve $Chart from $Snapshot/ResourceMonitor.Snapshot_ChartPoint;
 $Done2 = call microflow ResourceMonitor.ACT_SetRange(Snapshot = $Snapshot, Range = ResourceMonitor.ChartRange.Last14d);
@@ -119,7 +112,7 @@ retrieve $Again from $Snapshot/ResourceMonitor.Snapshot_ChartPoint;
  */
 $Created = call java action ResourceMonitor.JA_GenerateDemoHistory(Days = 3);
 retrieve $Before from ResourceMonitor.ResourcePoint;
-$Snapshot = call microflow ResourceMonitor.SUB_CaptureSnapshot(IncludeStackTraces = false, IncludeJmxMetrics = false);
+$Snapshot = call microflow ResourceMonitor.SUB_CaptureSnapshot(IncludeDetails = false);
 $Recorded = call java action ResourceMonitor.JA_RecordPoint(Snapshot = $Snapshot, RetentionDays = 1);
 retrieve $After from ResourceMonitor.ResourcePoint;
 /
@@ -138,4 +131,3 @@ $Deleted = call java action ResourceMonitor.JA_DeleteHistory(DemoOnly = true);
 retrieve $Demo from ResourceMonitor.ResourcePoint where IsDemo = true;
 retrieve $Real from ResourceMonitor.ResourcePoint where IsDemo = false;
 /
-

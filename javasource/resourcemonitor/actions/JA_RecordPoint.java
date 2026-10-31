@@ -46,14 +46,13 @@ public class JA_RecordPoint extends UserAction<java.lang.Boolean>
 		final String[][] map = {
 		  {"ProcessCpuPct", "ProcessCpuLoadPercent"}, {"SystemCpuPct", "SystemCpuLoadPercent"},
 		  {"HeapUsedMb", "HeapUsedMb"}, {"HeapCommittedMb", "HeapCommittedMb"}, {"HeapMaxMb", "HeapMaxMb"},
-		  {"NonHeapUsedMb", "NonHeapUsedMb"}, {"PhysicalFreeMb", "PhysicalMemoryFreeMb"}, {"LoadedClasses", "LoadedClassCount"},
-		  {"Threads", "ThreadCount"}, {"DaemonThreads", "DaemonThreadCount"}, {"DeadlockedThreads", "DeadlockedThreadCount"},
+		  {"NonHeapUsedMb", "NonHeapUsedMb"},
+		  {"Threads", "ThreadCount"}, {"DeadlockedThreads", "DeadlockedThreadCount"},
 		  {"WebThreads", "WebThreadsTotal"}, {"WebIdleThreads", "WebThreadsIdle"}, {"WebQueue", "WebQueueSize"},
 		  {"PoolActive", "DbPoolActive"}, {"PoolIdle", "DbPoolIdle"}, {"PoolWaiters", "DbPoolWaiters"},
 		  {"DbPingMs", "DbPingMs"}, {"Sessions", "ActiveSessions"},
 		  {"GcCountTotal", "GcCollectionCount"}, {"GcTimeMsTotal", "GcCollectionTimeMs"},
-		  {"SelectsTotal", "DbSelects"}, {"InsertsTotal", "DbInserts"}, {"UpdatesTotal", "DbUpdates"},
-		  {"DeletesTotal", "DbDeletes"}, {"TransactionsTotal", "DbTransactions"}
+		  {"SelectsTotal", "DbSelects"}, {"UpdatesTotal", "DbUpdates"}
 		};
 		com.mendix.systemwideinterfaces.core.IMendixObject point = com.mendix.core.Core.instantiate(ctx, "ResourceMonitor.ResourcePoint");
 		java.util.Date at = snap.getValue(ctx, "CapturedAt");

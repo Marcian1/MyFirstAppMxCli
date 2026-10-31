@@ -1,0 +1,94 @@
+mdl 1;
+
+-- Overview redesign, step 2 of 3: the capture API takes one flag (IncludeDetails) instead of stack-trace and JMX flags,
+-- and the "Max detail" toggle is gone.
+
+drop microflow if exists ResourceMonitor.SUB_CaptureSnapshot;
+/** Public API. Captures a fresh snapshot of runtime, JVM, OS/CPU, memory, threads, GC, session count and database information.
+ *  With IncludeDetails the snapshot also lists threads (with stack traces), memory pools and garbage collectors.
+ *  Call it from your own microflows, e.g. a scheduled event, and read the returned Snapshot and its child lists. */
+create microflow ResourceMonitor.SUB_CaptureSnapshot($IncludeDetails: Boolean) returns ResourceMonitor.Snapshot as $Snapshot
+begin
+  $Snapshot = create ResourceMonitor.Snapshot ();
+  $Captured = call java action ResourceMonitor.JA_Capture(
+    Snapshot = $Snapshot,
+    IncludeDetails = $IncludeDetails
+  );
+  return $Snapshot;
+end;
+
+drop microflow if exists ResourceMonitor.SUB_LoadHistory;
+/** Data source of the dashboard page: a fresh live snapshot with details, plus the charts for the default range. */
+create or modify microflow ResourceMonitor.DS_Snapshot() returns ResourceMonitor.Snapshot as $Snapshot
+begin
+  $Snapshot = call microflow ResourceMonitor.SUB_CaptureSnapshot(IncludeDetails = true);
+  $Done = call microflow ResourceMonitor.SUB_LoadHistory(Snapshot = $Snapshot);
+  return $Snapshot;
+end;
+
+/** Re-captures the live values in place and reloads the charts for the selected range. */
+create or modify microflow ResourceMonitor.ACT_Refresh($Snapshot: ResourceMonitor.Snapshot) returns Boolean as $Done
+begin
+  $Captured = call java action ResourceMonitor.JA_Capture(
+    Snapshot = $Snapshot,
+    IncludeDetails = true
+  );
+  $Loaded = call microflow ResourceMonitor.SUB_LoadHistory(Snapshot = $Snapshot);
+  return true;
+end;
+
+/** Writes a one-line summary of the key resource numbers to the log node ResourceMonitor. Suitable for a scheduled event. */
+create or modify microflow ResourceMonitor.ACT_LogSnapshot() returns Boolean as $Done
+begin
+  $Snapshot = call microflow ResourceMonitor.SUB_CaptureSnapshot(IncludeDetails = false);
+  log info node 'ResourceMonitor' 'heap ' + toString($Snapshot/HeapUsedMb) + '/' + toString($Snapshot/HeapMaxMb) + ' MB, threads ' + toString($Snapshot/ThreadCount) + ', sessions ' + toString($Snapshot/ActiveSessions) + ', db ping ' + toString($Snapshot/DbPingMs) + ' ms, deadlocked ' + toString($Snapshot/DeadlockedThreadCount);
+  return true;
+end;
+
+/** Runs every minute from the scheduled event: stores one sample (numbers only, no thread or pool lists) and applies the retention period. */
+create or modify microflow ResourceMonitor.SE_CollectPoint() returns Boolean as $Collected
+begin
+  if @ResourceMonitor.CollectionEnabled then
+    $Snapshot = call microflow ResourceMonitor.SUB_CaptureSnapshot(IncludeDetails = false);
+    $Recorded = call java action ResourceMonitor.JA_RecordPoint(Snapshot = $Snapshot, RetentionDays = @ResourceMonitor.RetentionDays);
+    return true;
+  end if;
+  return false;
+end;
+
+/** Stores one sample right now, in addition to the scheduled one. */
+create or modify microflow ResourceMonitor.ACT_CollectNow($Status: ResourceMonitor.HistoryStatus) returns Boolean as $Done
+begin
+  $Snapshot = call microflow ResourceMonitor.SUB_CaptureSnapshot(IncludeDetails = false);
+  $Recorded = call java action ResourceMonitor.JA_RecordPoint(Snapshot = $Snapshot, RetentionDays = @ResourceMonitor.RetentionDays);
+  $Filled = call java action ResourceMonitor.JA_HistoryStatus(Status = $Status);
+  change $Status (Message = 'Stored one sample.');
+  return true;
+end;
+
+/** Rebuilds the snapshot's chart points for the period it has selected: a preset range ending now (up to 720 points), or the custom From/To period (up to 1440 points, so up to 24 hours is one point per minute). */
+create microflow ResourceMonitor.SUB_LoadHistory($Snapshot: ResourceMonitor.Snapshot) returns Boolean as $Done
+begin
+  declare $To datetime = [%CurrentDateTime%];
+  declare $From datetime = [%CurrentDateTime%];
+  declare $Max integer = 720;
+  if $Snapshot/CustomFrom = empty or $Snapshot/CustomTo = empty then
+    change $Snapshot (CustomTo = $To, CustomFrom = addMinutes($To, -60));
+  end if;
+  if $Snapshot/Range = ResourceMonitor.ChartRange.Custom then
+    set $From = $Snapshot/CustomFrom;
+    set $To = $Snapshot/CustomTo;
+    set $Max = 1440;
+  else
+    $Minutes = call microflow ResourceMonitor.SUB_RangeMinutes(Range = $Snapshot/Range);
+    set $From = addMinutes($To, 0 - $Minutes);
+  end if;
+  if $To <= $From then
+    set $To = addMinutes($From, 1);
+  end if;
+  $Loaded = call java action ResourceMonitor.JA_LoadHistory(Snapshot = $Snapshot, FromTime = $From, ToTime = $To, MaxBuckets = $Max);
+  return true;
+end;
+
+GRANT EXECUTE ON MICROFLOW ResourceMonitor.SUB_CaptureSnapshot TO ResourceMonitor.Admin;
+GRANT EXECUTE ON MICROFLOW ResourceMonitor.SUB_LoadHistory TO ResourceMonitor.Admin;

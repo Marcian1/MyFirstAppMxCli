@@ -1,0 +1,569 @@
+mdl 1;
+
+-- Overview redesign, step 1 of 3: domain additions and the Java actions.
+-- Run 10_overview_java, then 11_overview_microflows, then 12_overview_page, then 13_overview_cleanup.
+-- The redesign drops everything that is user data or a secret (session list, user agents, JVM arguments,
+-- database URL and user, system properties, the raw JMX dump) and every metric the dashboard no longer shows.
+
+ALTER ENTITY ResourceMonitor.ChartPoint ADD ATTRIBUTE IF NOT EXISTS PoolMaxConnections: Decimal;
+ALTER ENTITY ResourceMonitor.ChartPoint ADD ATTRIBUTE IF NOT EXISTS WebMaxThreads: Decimal;
+
+/** Fills a ResourceMonitor.Snapshot with the application's current runtime, JVM, OS/CPU, memory, thread, GC, session count and database information. With IncludeDetails it also lists every thread (with stack trace), memory pool and garbage collector; without it only the numbers are collected, which is what the per-minute collector needs. Each section is collected independently, so one probe that fails on this platform leaves the others intact. No user names, JVM arguments, URLs or credentials are read. */
+create or modify java action ResourceMonitor.JA_Capture(
+  /** The snapshot to (re)fill. Its previous child samples are deleted. */
+  Snapshot: ResourceMonitor.Snapshot not null,
+  /** Also list threads (with stack traces), memory pools and garbage collectors. Heavier; the dashboard needs it, the collector does not. */
+  IncludeDetails: boolean not null
+) returns boolean as $Captured
+as $$
+final long startedNanos = System.nanoTime();
+final com.mendix.systemwideinterfaces.core.IContext ctx = getContext();
+final com.mendix.systemwideinterfaces.core.IMendixObject snap = Snapshot.getMendixObject();
+final boolean details = IncludeDetails != null && IncludeDetails;
+final java.util.function.Function<Number, java.math.BigDecimal> dec = n -> {
+  if (n == null) return null;
+  double d = n.doubleValue();
+  if (Double.isNaN(d) || Double.isInfinite(d) || d < 0) return null;
+  return java.math.BigDecimal.valueOf(d).setScale(2, java.math.RoundingMode.HALF_UP);
+};
+final java.util.function.LongUnaryOperator mb = b -> b < 0 ? -1L : b / (1024L * 1024L);
+final java.util.function.Function<String, String> clip = s -> s == null ? null : (s.length() > 1000 ? s.substring(0, 997) + "..." : s);
+
+// ---- drop the previous child samples ----------------------------------------------------------
+final String[] assocs = {
+  "ResourceMonitor.Snapshot_ThreadSample", "ResourceMonitor.Snapshot_MemoryPoolSample", "ResourceMonitor.Snapshot_GcSample"
+};
+for (String assoc : assocs) {
+  try {
+    java.util.List<com.mendix.systemwideinterfaces.core.IMendixIdentifier> old = snap.getValue(ctx, assoc);
+    if (old != null && !old.isEmpty()) {
+      java.util.List<com.mendix.systemwideinterfaces.core.IMendixObject> objs = com.mendix.core.Core.retrieveIdList(ctx, old);
+      snap.setValue(ctx, assoc, new java.util.ArrayList<com.mendix.systemwideinterfaces.core.IMendixIdentifier>());
+      if (objs != null && !objs.isEmpty()) com.mendix.core.Core.delete(ctx, objs);
+    }
+  } catch (Exception e) {
+    // a stale child list must never stop a new capture
+  }
+}
+
+snap.setValue(ctx, "CapturedAt", new java.util.Date());
+
+// ---- application / runtime -------------------------------------------------------------------
+try {
+  snap.setValue(ctx, "MendixRuntimeVersion", com.mendix.core.Core.getRuntimeVersion());
+} catch (Throwable t) { }
+
+// ---- sessions: a count only, no user names ----------------------------------------------------
+try {
+  long total = 0;
+  for (com.mendix.systemwideinterfaces.core.ISession s : com.mendix.core.Core.getActiveSessions()) {
+    if (!s.isSystemSession()) total++;
+  }
+  snap.setValue(ctx, "ActiveSessions", Long.valueOf(total));
+} catch (Throwable t) { }
+
+// ---- JVM -------------------------------------------------------------------------------------
+try {
+  java.lang.management.RuntimeMXBean rt = java.lang.management.ManagementFactory.getRuntimeMXBean();
+  snap.setValue(ctx, "JvmName", rt.getVmName() + " " + rt.getVmVersion());
+  snap.setValue(ctx, "JavaVersion", System.getProperty("java.version"));
+  snap.setValue(ctx, "JvmStartedAt", new java.util.Date(rt.getStartTime()));
+} catch (Throwable t) { }
+
+// ---- OS and CPU ------------------------------------------------------------------------------
+try {
+  java.lang.management.OperatingSystemMXBean os = java.lang.management.ManagementFactory.getOperatingSystemMXBean();
+  snap.setValue(ctx, "OsName", os.getName());
+  snap.setValue(ctx, "OsArch", os.getArch());
+  snap.setValue(ctx, "AvailableProcessors", Long.valueOf(os.getAvailableProcessors()));
+  if (os instanceof com.sun.management.OperatingSystemMXBean) {
+    com.sun.management.OperatingSystemMXBean sun = (com.sun.management.OperatingSystemMXBean) os;
+    double proc = sun.getProcessCpuLoad();
+    double sys = sun.getCpuLoad();
+    snap.setValue(ctx, "ProcessCpuLoadPercent", proc < 0 ? null : dec.apply(proc * 100.0));
+    snap.setValue(ctx, "SystemCpuLoadPercent", sys < 0 ? null : dec.apply(sys * 100.0));
+    snap.setValue(ctx, "PhysicalMemoryTotalMb", Long.valueOf(mb.applyAsLong(sun.getTotalMemorySize())));
+    snap.setValue(ctx, "PhysicalMemoryFreeMb", Long.valueOf(mb.applyAsLong(sun.getFreeMemorySize())));
+  }
+} catch (Throwable t) { }
+try {
+  java.io.File dir = new java.io.File(System.getProperty("user.dir", "."));
+  snap.setValue(ctx, "DiskTotalMb", Long.valueOf(mb.applyAsLong(dir.getTotalSpace())));
+  snap.setValue(ctx, "DiskFreeMb", Long.valueOf(mb.applyAsLong(dir.getUsableSpace())));
+} catch (Throwable t) { }
+
+// ---- memory ----------------------------------------------------------------------------------
+try {
+  java.lang.management.MemoryMXBean mem = java.lang.management.ManagementFactory.getMemoryMXBean();
+  java.lang.management.MemoryUsage heap = mem.getHeapMemoryUsage();
+  snap.setValue(ctx, "HeapUsedMb", Long.valueOf(mb.applyAsLong(heap.getUsed())));
+  snap.setValue(ctx, "HeapCommittedMb", Long.valueOf(mb.applyAsLong(heap.getCommitted())));
+  snap.setValue(ctx, "HeapMaxMb", Long.valueOf(mb.applyAsLong(heap.getMax())));
+  snap.setValue(ctx, "NonHeapUsedMb", Long.valueOf(mb.applyAsLong(mem.getNonHeapMemoryUsage().getUsed())));
+} catch (Throwable t) { }
+if (details) {
+  try {
+    final java.util.List<com.mendix.systemwideinterfaces.core.IMendixIdentifier> ids = new java.util.ArrayList<>();
+    for (java.lang.management.MemoryPoolMXBean p : java.lang.management.ManagementFactory.getMemoryPoolMXBeans()) {
+      java.lang.management.MemoryUsage u = p.getUsage();
+      java.lang.management.MemoryUsage peak = p.getPeakUsage();
+      // code cache and compressed class space are never actionable, so they are left out
+      if (u == null || p.getName().startsWith("Code") || p.getName().startsWith("Compressed Class")) continue;
+      com.mendix.systemwideinterfaces.core.IMendixObject o = com.mendix.core.Core.instantiate(ctx, "ResourceMonitor.MemoryPoolSample");
+      o.setValue(ctx, "Name", p.getName());
+      o.setValue(ctx, "PoolType", p.getType().toString());
+      o.setValue(ctx, "UsedMb", dec.apply(u.getUsed() / 1048576.0));
+      o.setValue(ctx, "CommittedMb", dec.apply(u.getCommitted() / 1048576.0));
+      o.setValue(ctx, "MaxMb", u.getMax() < 0 ? null : dec.apply(u.getMax() / 1048576.0));
+      o.setValue(ctx, "PeakUsedMb", peak == null ? null : dec.apply(peak.getUsed() / 1048576.0));
+      o.setValue(ctx, "UsedPercentOfMax", u.getMax() <= 0 ? null : dec.apply(u.getUsed() * 100.0 / u.getMax()));
+      ids.add(o.getId());
+    }
+    snap.setValue(ctx, "ResourceMonitor.Snapshot_MemoryPoolSample", ids);
+  } catch (Throwable t) { }
+}
+
+// ---- garbage collection ----------------------------------------------------------------------
+try {
+  final java.util.List<com.mendix.systemwideinterfaces.core.IMendixIdentifier> ids = new java.util.ArrayList<>();
+  long count = 0;
+  long time = 0;
+  for (java.lang.management.GarbageCollectorMXBean g : java.lang.management.ManagementFactory.getGarbageCollectorMXBeans()) {
+    if (details) {
+      com.mendix.systemwideinterfaces.core.IMendixObject o = com.mendix.core.Core.instantiate(ctx, "ResourceMonitor.GcSample");
+      o.setValue(ctx, "Name", g.getName());
+      o.setValue(ctx, "CollectionCount", Long.valueOf(g.getCollectionCount()));
+      o.setValue(ctx, "CollectionTimeMs", Long.valueOf(g.getCollectionTime()));
+      o.setValue(ctx, "MemoryPools", clip.apply(String.join(", ", g.getMemoryPoolNames())));
+      ids.add(o.getId());
+    }
+    if (g.getCollectionCount() > 0) count += g.getCollectionCount();
+    if (g.getCollectionTime() > 0) time += g.getCollectionTime();
+  }
+  if (details) snap.setValue(ctx, "ResourceMonitor.Snapshot_GcSample", ids);
+  snap.setValue(ctx, "GcCollectionCount", Long.valueOf(count));
+  snap.setValue(ctx, "GcCollectionTimeMs", Long.valueOf(time));
+} catch (Throwable t) { }
+
+// ---- threads ---------------------------------------------------------------------------------
+try {
+  java.lang.management.ThreadMXBean tm = java.lang.management.ManagementFactory.getThreadMXBean();
+  snap.setValue(ctx, "ThreadCount", Long.valueOf(tm.getThreadCount()));
+
+  long[] dead = tm.findDeadlockedThreads();
+  snap.setValue(ctx, "DeadlockedThreadCount", Long.valueOf(dead == null ? 0L : dead.length));
+  if (dead != null) {
+    java.util.List<String> dn = new java.util.ArrayList<>();
+    for (java.lang.management.ThreadInfo ti : tm.getThreadInfo(dead)) {
+      if (ti != null) dn.add(ti.getThreadId() + " " + ti.getThreadName());
+    }
+    snap.setValue(ctx, "DeadlockedThreads", String.join("\n", dn));
+  }
+
+  if (details) {
+    final java.util.List<com.mendix.systemwideinterfaces.core.IMendixIdentifier> ids = new java.util.ArrayList<>();
+    java.lang.management.ThreadInfo[] infos = tm.dumpAllThreads(false, false);
+    java.util.Arrays.sort(infos, java.util.Comparator.comparing(ti -> ti.getThreadName().toLowerCase()));
+    boolean cpuTime = tm.isThreadCpuTimeSupported() && tm.isThreadCpuTimeEnabled();
+    for (java.lang.management.ThreadInfo ti : infos) {
+      com.mendix.systemwideinterfaces.core.IMendixObject o = com.mendix.core.Core.instantiate(ctx, "ResourceMonitor.ThreadSample");
+      o.setValue(ctx, "ThreadId", Long.valueOf(ti.getThreadId()));
+      o.setValue(ctx, "Name", clip.apply(ti.getThreadName()));
+      o.setValue(ctx, "State", ti.getThreadState().toString());
+      o.setValue(ctx, "IsDaemon", ti.isDaemon());
+      o.setValue(ctx, "Priority", Long.valueOf(ti.getPriority()));
+      if (cpuTime) {
+        long ns = tm.getThreadCpuTime(ti.getThreadId());
+        o.setValue(ctx, "CpuTimeMs", ns < 0 ? null : Long.valueOf(ns / 1_000_000L));
+      }
+      o.setValue(ctx, "BlockedCount", Long.valueOf(ti.getBlockedCount()));
+      o.setValue(ctx, "WaitedCount", Long.valueOf(ti.getWaitedCount()));
+      o.setValue(ctx, "BlockedOnLock", clip.apply(ti.getLockName()));
+      o.setValue(ctx, "LockOwnerName", clip.apply(ti.getLockOwnerName()));
+      StackTraceElement[] st = ti.getStackTrace();
+      if (st != null && st.length > 0) {
+        o.setValue(ctx, "TopFrame", clip.apply(st[0].toString()));
+        StringBuilder sb = new StringBuilder();
+        int max = Math.min(st.length, 60);
+        for (int i = 0; i < max; i++) sb.append("at ").append(st[i]).append('\n');
+        if (st.length > max) sb.append("... ").append(st.length - max).append(" more frames\n");
+        o.setValue(ctx, "StackTrace", sb.toString());
+      }
+      ids.add(o.getId());
+    }
+    snap.setValue(ctx, "ResourceMonitor.Snapshot_ThreadSample", ids);
+  }
+} catch (Throwable t) { }
+
+// ---- database: product, driver and speed. The URL and the database user are deliberately not read ------
+try {
+  final String[] db = new String[6];
+  final long[] pingNanos = { -1L };
+  com.mendix.core.Core.dataStorage().executeWithConnection(connection -> {
+    try {
+      java.sql.DatabaseMetaData md = connection.getMetaData();
+      db[0] = md.getDatabaseProductName();
+      db[1] = md.getDatabaseProductVersion();
+      db[2] = md.getDriverName();
+      db[3] = md.getDriverVersion();
+      switch (connection.getTransactionIsolation()) {
+        case java.sql.Connection.TRANSACTION_READ_UNCOMMITTED: db[4] = "READ_UNCOMMITTED"; break;
+        case java.sql.Connection.TRANSACTION_READ_COMMITTED: db[4] = "READ_COMMITTED"; break;
+        case java.sql.Connection.TRANSACTION_REPEATABLE_READ: db[4] = "REPEATABLE_READ"; break;
+        case java.sql.Connection.TRANSACTION_SERIALIZABLE: db[4] = "SERIALIZABLE"; break;
+        default: db[4] = "NONE"; break;
+      }
+      long t0 = System.nanoTime();
+      boolean ok = connection.isValid(5);
+      pingNanos[0] = System.nanoTime() - t0;
+      if (!ok) db[5] = "Connection.isValid returned false";
+    } catch (Exception e) {
+      db[5] = e.getClass().getSimpleName();
+    }
+    return null;
+  });
+  snap.setValue(ctx, "DbProductName", db[0]);
+  snap.setValue(ctx, "DbProductVersion", clip.apply(db[1]));
+  snap.setValue(ctx, "DbDriverName", db[2]);
+  snap.setValue(ctx, "DbDriverVersion", db[3]);
+  snap.setValue(ctx, "DbTransactionIsolation", db[4]);
+  snap.setValue(ctx, "DbPingMs", pingNanos[0] < 0 ? null : java.math.BigDecimal.valueOf(pingNanos[0] / 1_000_000.0).setScale(2, java.math.RoundingMode.HALF_UP));
+  snap.setValue(ctx, "DbError", db[5]);
+} catch (Throwable t) {
+  try { snap.setValue(ctx, "DbError", t.getClass().getSimpleName()); } catch (Throwable ignore) { }
+}
+
+// ---- Mendix data storage counters, Jetty web server and database connection pool, via JMX -----------
+try {
+  final javax.management.MBeanServer srv = java.lang.management.ManagementFactory.getPlatformMBeanServer();
+  final java.util.function.BiFunction<javax.management.ObjectName, String, Long> num = (on, attr) -> {
+    try {
+      Object v = srv.getAttribute(on, attr);
+      return v instanceof Number ? Long.valueOf(((Number) v).longValue()) : null;
+    } catch (Throwable ignore) {
+      return null;
+    }
+  };
+  javax.management.ObjectName store = new javax.management.ObjectName("com.mendix:type=DataStorage");
+  snap.setValue(ctx, "DbSelects", num.apply(store, "Selects"));
+  snap.setValue(ctx, "DbUpdates", num.apply(store, "Updates"));
+
+  javax.management.ObjectName jettyPool = new javax.management.ObjectName("com.mendix:type=JettyThreadPool");
+  snap.setValue(ctx, "WebThreadsTotal", num.apply(jettyPool, "Threads"));
+  snap.setValue(ctx, "WebThreadsIdle", num.apply(jettyPool, "IdleThreads"));
+  snap.setValue(ctx, "WebThreadsMax", num.apply(jettyPool, "MaxThreads"));
+  snap.setValue(ctx, "WebQueueSize", num.apply(jettyPool, "QueueSize"));
+
+  long active = 0, idle = 0, waiters = 0, maxTotal = 0;
+  boolean anyPool = false;
+  for (javax.management.ObjectName pool : srv.queryNames(new javax.management.ObjectName("org.apache.commons.pool2:type=GenericObjectPool,*"), null)) {
+    anyPool = true;
+    Long v;
+    if ((v = num.apply(pool, "NumActive")) != null) active += v;
+    if ((v = num.apply(pool, "NumIdle")) != null) idle += v;
+    if ((v = num.apply(pool, "NumWaiters")) != null) waiters += v;
+    if ((v = num.apply(pool, "MaxTotal")) != null) maxTotal = Math.max(maxTotal, v);
+  }
+  if (anyPool) {
+    snap.setValue(ctx, "DbPoolActive", Long.valueOf(active));
+    snap.setValue(ctx, "DbPoolIdle", Long.valueOf(idle));
+    snap.setValue(ctx, "DbPoolWaiters", Long.valueOf(waiters));
+    snap.setValue(ctx, "DbPoolMaxTotal", Long.valueOf(maxTotal));
+  }
+} catch (Throwable t) { }
+
+snap.setValue(ctx, "CaptureDurationMs", Long.valueOf((System.nanoTime() - startedNanos) / 1_000_000L));
+return true;
+$$;
+
+/** Stores the current snapshot as one persistent per-minute ResourcePoint and deletes points older than the retention period. Called by the scheduled collector. */
+create or modify java action ResourceMonitor.JA_RecordPoint(
+  /** A freshly captured snapshot (no details needed). */
+  Snapshot: ResourceMonitor.Snapshot not null,
+  /** Points older than this many days are deleted. Zero or less keeps everything. */
+  RetentionDays: integer not null
+) returns boolean as $Recorded
+as $$
+final com.mendix.systemwideinterfaces.core.IContext ctx = getContext();
+final com.mendix.systemwideinterfaces.core.IMendixObject snap = Snapshot.getMendixObject();
+final String[][] map = {
+  {"ProcessCpuPct", "ProcessCpuLoadPercent"}, {"SystemCpuPct", "SystemCpuLoadPercent"},
+  {"HeapUsedMb", "HeapUsedMb"}, {"HeapCommittedMb", "HeapCommittedMb"}, {"HeapMaxMb", "HeapMaxMb"},
+  {"NonHeapUsedMb", "NonHeapUsedMb"},
+  {"Threads", "ThreadCount"}, {"DeadlockedThreads", "DeadlockedThreadCount"},
+  {"WebThreads", "WebThreadsTotal"}, {"WebIdleThreads", "WebThreadsIdle"}, {"WebQueue", "WebQueueSize"},
+  {"PoolActive", "DbPoolActive"}, {"PoolIdle", "DbPoolIdle"}, {"PoolWaiters", "DbPoolWaiters"},
+  {"DbPingMs", "DbPingMs"}, {"Sessions", "ActiveSessions"},
+  {"GcCountTotal", "GcCollectionCount"}, {"GcTimeMsTotal", "GcCollectionTimeMs"},
+  {"SelectsTotal", "DbSelects"}, {"UpdatesTotal", "DbUpdates"}
+};
+com.mendix.systemwideinterfaces.core.IMendixObject point = com.mendix.core.Core.instantiate(ctx, "ResourceMonitor.ResourcePoint");
+java.util.Date at = snap.getValue(ctx, "CapturedAt");
+point.setValue(ctx, "Timestamp", at == null ? new java.util.Date() : at);
+point.setValue(ctx, "IsDemo", false);
+for (String[] m : map) {
+  point.setValue(ctx, m[0], snap.getValue(ctx, m[1]));
+}
+com.mendix.core.Core.commit(ctx, point);
+
+if (RetentionDays != null && RetentionDays > 0) {
+  java.util.Date cutoff = new java.util.Date(System.currentTimeMillis() - RetentionDays * 86_400_000L);
+  while (true) {
+    java.util.List<com.mendix.systemwideinterfaces.core.IMendixObject> old = com.mendix.core.Core
+        .createXPathQuery("//ResourceMonitor.ResourcePoint[Timestamp < $cutoff]")
+        .setVariable("cutoff", cutoff).setAmount(2000).execute(ctx);
+    if (old.isEmpty()) break;
+    com.mendix.core.Core.delete(ctx, old);
+    if (old.size() < 2000) break;
+  }
+}
+return true;
+$$;
+
+/** Fills the snapshot's ChartPoint list from the stored per-minute history between FromTime and ToTime, grouped into at most MaxBuckets time buckets. Gauges are averaged per bucket, except the web request queue and the database connection waiters, which keep the bucket maximum so a short spike is not averaged away; database counters become per-minute rates. The pool and web thread limits are taken from the snapshot so the charts can draw a limit line. */
+create or modify java action ResourceMonitor.JA_LoadHistory(
+  /** The snapshot whose chart points are replaced. */
+  Snapshot: ResourceMonitor.Snapshot not null,
+  /** Start of the period. */
+  FromTime: datetime not null,
+  /** End of the period. */
+  ToTime: datetime not null,
+  /** Upper limit for chart points per series. */
+  MaxBuckets: integer not null
+) returns boolean as $Loaded
+as $$
+final com.mendix.systemwideinterfaces.core.IContext ctx = getContext();
+final com.mendix.systemwideinterfaces.core.IMendixObject snap = Snapshot.getMendixObject();
+final String assoc = "ResourceMonitor.Snapshot_ChartPoint";
+
+// drop the previous chart points
+try {
+  java.util.List<com.mendix.systemwideinterfaces.core.IMendixIdentifier> old = snap.getValue(ctx, assoc);
+  if (old != null && !old.isEmpty()) {
+    java.util.List<com.mendix.systemwideinterfaces.core.IMendixObject> objs = com.mendix.core.Core.retrieveIdList(ctx, old);
+    snap.setValue(ctx, assoc, new java.util.ArrayList<com.mendix.systemwideinterfaces.core.IMendixIdentifier>());
+    if (objs != null && !objs.isEmpty()) com.mendix.core.Core.delete(ctx, objs);
+  }
+} catch (Exception e) { }
+
+final long rangeMin = Math.max(1L, (ToTime.getTime() - FromTime.getTime()) / 60_000L);
+final long maxBuckets = Math.max(10L, MaxBuckets == null ? 480L : MaxBuckets);
+final long bucketMin = Math.max(1L, (rangeMin + maxBuckets - 1) / maxBuckets);
+final long bucketMs = bucketMin * 60_000L;
+final long nowMs = ToTime.getTime();
+final long fromMs = FromTime.getTime();
+final int nBuckets = (int) ((rangeMin * 60_000L) / bucketMs) + 1;
+
+final String[] G = {"ProcessCpuPct", "SystemCpuPct", "HeapUsedMb", "HeapCommittedMb", "HeapMaxMb", "NonHeapUsedMb",
+  "WebThreads", "WebIdleThreads", "WebQueue", "PoolActive", "PoolIdle", "PoolWaiters", "Sessions"};
+final String[] T = {"SelectsTotal", "UpdatesTotal"};
+final double[][] gSum = new double[nBuckets][G.length];
+final double[][] gMax = new double[nBuckets][G.length];
+final int[][] gCnt = new int[nBuckets][G.length];
+final double[][] rSum = new double[nBuckets][T.length];
+final int[][] rCnt = new int[nBuckets][T.length];
+final int[] pts = new int[nBuckets];
+
+final java.util.function.ToDoubleBiFunction<com.mendix.systemwideinterfaces.core.IMendixObject, String> num = (o, a) -> {
+  Object v = o.getValue(ctx, a);
+  return v instanceof Number ? ((Number) v).doubleValue() : Double.NaN;
+};
+
+long total = 0;
+long firstMs = -1;
+long lastMs = -1;
+long prevMs = -1;
+double[] prevTot = new double[T.length];
+int offset = 0;
+final int page = 5000;
+final java.util.Date from = new java.util.Date(fromMs - 5L * 60_000L);
+while (true) {
+  java.util.List<com.mendix.systemwideinterfaces.core.IMendixObject> rows = com.mendix.core.Core
+      .createXPathQuery("//ResourceMonitor.ResourcePoint[Timestamp >= $from]")
+      .setVariable("from", from).addSort("Timestamp", true).setAmount(page).setOffset(offset).execute(ctx);
+  for (com.mendix.systemwideinterfaces.core.IMendixObject r : rows) {
+    java.util.Date ts = r.getValue(ctx, "Timestamp");
+    if (ts == null) continue;
+    long t = ts.getTime();
+    double[] tot = new double[T.length];
+    for (int i = 0; i < T.length; i++) tot[i] = num.applyAsDouble(r, T[i]);
+    if (t >= fromMs && t <= nowMs) {
+      int b = (int) ((t - fromMs) / bucketMs);
+      if (b >= nBuckets) b = nBuckets - 1;
+      pts[b]++;
+      total++;
+      if (firstMs < 0) firstMs = t;
+      lastMs = t;
+      for (int i = 0; i < G.length; i++) {
+        double v = num.applyAsDouble(r, G[i]);
+        if (Double.isNaN(v)) continue;
+        gSum[b][i] += v;
+        gCnt[b][i]++;
+        if (gCnt[b][i] == 1 || v > gMax[b][i]) gMax[b][i] = v;
+      }
+      if (prevMs >= 0) {
+        double minutes = (t - prevMs) / 60_000.0;
+        // gaps of more than 30 minutes (collector was off) or a runtime restart (counters went back) give no rate
+        if (minutes > 0 && minutes <= 30) {
+          for (int i = 0; i < T.length; i++) {
+            if (Double.isNaN(tot[i]) || Double.isNaN(prevTot[i]) || tot[i] < prevTot[i]) continue;
+            rSum[b][i] += (tot[i] - prevTot[i]) / minutes;
+            rCnt[b][i]++;
+          }
+        }
+      }
+    }
+    prevMs = t;
+    prevTot = tot;
+  }
+  if (rows.size() < page) break;
+  offset += page;
+}
+
+final java.util.function.Function<Double, java.math.BigDecimal> dec = d -> d == null || d.isNaN() || d.isInfinite() ? null
+    : java.math.BigDecimal.valueOf(d).setScale(2, java.math.RoundingMode.HALF_UP);
+final Object poolLimit = snap.getValue(ctx, "DbPoolMaxTotal");
+final Object webLimit = snap.getValue(ctx, "WebThreadsMax");
+final java.math.BigDecimal poolMax = poolLimit instanceof Number ? dec.apply(((Number) poolLimit).doubleValue()) : null;
+final java.math.BigDecimal webMax = webLimit instanceof Number ? dec.apply(((Number) webLimit).doubleValue()) : null;
+
+final java.util.List<com.mendix.systemwideinterfaces.core.IMendixIdentifier> ids = new java.util.ArrayList<>();
+for (int b = 0; b < nBuckets; b++) {
+  if (pts[b] == 0) continue;
+  com.mendix.systemwideinterfaces.core.IMendixObject o = com.mendix.core.Core.instantiate(ctx, "ResourceMonitor.ChartPoint");
+  o.setValue(ctx, "Timestamp", new java.util.Date(fromMs + b * bucketMs));
+  final int bb = b;
+  final java.util.function.IntFunction<Double> avg = i -> gCnt[bb][i] == 0 ? null : gSum[bb][i] / gCnt[bb][i];
+  final java.util.function.IntFunction<Double> max = i -> gCnt[bb][i] == 0 ? null : gMax[bb][i];
+  final java.util.function.IntFunction<Double> rate = i -> rCnt[bb][i] == 0 ? null : rSum[bb][i] / rCnt[bb][i];
+  o.setValue(ctx, "ProcessCpuAvg", dec.apply(avg.apply(0)));
+  o.setValue(ctx, "SystemCpuAvg", dec.apply(avg.apply(1)));
+  o.setValue(ctx, "HeapUsedMb", dec.apply(avg.apply(2)));
+  o.setValue(ctx, "HeapCommittedMb", dec.apply(avg.apply(3)));
+  o.setValue(ctx, "HeapMaxMb", dec.apply(avg.apply(4)));
+  o.setValue(ctx, "NonHeapUsedMb", dec.apply(avg.apply(5)));
+  Double webTotal = avg.apply(6);
+  Double webIdle = avg.apply(7);
+  o.setValue(ctx, "WebBusyThreads", webTotal == null || webIdle == null ? null : dec.apply(Math.max(0.0, webTotal - webIdle)));
+  o.setValue(ctx, "WebQueue", dec.apply(max.apply(8)));
+  o.setValue(ctx, "PoolActive", dec.apply(avg.apply(9)));
+  o.setValue(ctx, "PoolIdle", dec.apply(avg.apply(10)));
+  o.setValue(ctx, "PoolWaiters", dec.apply(max.apply(11)));
+  o.setValue(ctx, "Sessions", dec.apply(avg.apply(12)));
+  o.setValue(ctx, "SelectsPerMin", dec.apply(rate.apply(0)));
+  o.setValue(ctx, "UpdatesPerMin", dec.apply(rate.apply(1)));
+  o.setValue(ctx, "PoolMaxConnections", poolMax);
+  o.setValue(ctx, "WebMaxThreads", webMax);
+  ids.add(o.getId());
+}
+snap.setValue(ctx, assoc, ids);
+snap.setValue(ctx, "BucketMinutes", Long.valueOf(bucketMin));
+snap.setValue(ctx, "HistorySamples", Long.valueOf(total));
+snap.setValue(ctx, "HistoryFrom", firstMs < 0 ? null : new java.util.Date(firstMs));
+snap.setValue(ctx, "HistoryTo", lastMs < 0 ? null : new java.util.Date(lastMs));
+snap.setValue(ctx, "HistoryNote", total == 0
+    ? "No samples stored for this period yet. The collector stores one sample per minute once the application is running."
+    : total + " samples, one point per " + bucketMin + (bucketMin == 1 ? " minute" : " minutes") + ".");
+return true;
+$$;
+
+/** Creates synthetic per-minute history, flagged IsDemo, for the given number of days up to the oldest real sample, so the charts can be tried before real history exists. Existing demo samples are replaced. Returns the number of samples created. */
+create or modify java action ResourceMonitor.JA_GenerateDemoHistory(
+  /** How many days back to generate. */
+  Days: integer not null
+) returns integer as $Created
+as $$
+final com.mendix.systemwideinterfaces.core.IContext ctx = getContext();
+// replace earlier demo data
+while (true) {
+  java.util.List<com.mendix.systemwideinterfaces.core.IMendixObject> old = com.mendix.core.Core
+      .createXPathQuery("//ResourceMonitor.ResourcePoint[IsDemo = true()]").setAmount(2000).execute(ctx);
+  if (old.isEmpty()) break;
+  com.mendix.core.Core.delete(ctx, old);
+  if (old.size() < 2000) break;
+}
+long endMs = System.currentTimeMillis();
+java.util.List<com.mendix.systemwideinterfaces.core.IMendixObject> firstReal = com.mendix.core.Core
+    .createXPathQuery("//ResourceMonitor.ResourcePoint[IsDemo = false()]").addSort("Timestamp", true).setAmount(1).execute(ctx);
+if (!firstReal.isEmpty()) {
+  java.util.Date d = firstReal.get(0).getValue(ctx, "Timestamp");
+  if (d != null) endMs = d.getTime() - 60_000L;
+}
+final long minute = 60_000L;
+endMs = (endMs / minute) * minute;
+final long startMs = endMs - Math.max(1L, Days == null ? 14L : Days) * 1440L * minute;
+final java.util.Random rnd = new java.util.Random(20261029L);
+final java.util.Calendar cal = java.util.Calendar.getInstance();
+final java.util.function.Function<Double, java.math.BigDecimal> dec = d -> java.math.BigDecimal.valueOf(Math.max(0.0, d)).setScale(2, java.math.RoundingMode.HALF_UP);
+
+double gcCount = 0, gcTime = 0, selects = 0, updates = 0;
+long spikeLeft = 0;
+double spikePower = 0;
+long idx = 0;
+int created = 0;
+java.util.List<com.mendix.systemwideinterfaces.core.IMendixObject> batch = new java.util.ArrayList<>();
+for (long t = startMs; t <= endMs; t += minute, idx++) {
+  cal.setTimeInMillis(t);
+  double hour = cal.get(java.util.Calendar.HOUR_OF_DAY) + cal.get(java.util.Calendar.MINUTE) / 60.0;
+  int dow = cal.get(java.util.Calendar.DAY_OF_WEEK);
+  boolean weekend = dow == java.util.Calendar.SATURDAY || dow == java.util.Calendar.SUNDAY;
+  // office-hours curve peaking mid afternoon, flatter at the weekend
+  double activity = Math.max(0.03, 0.5 + 0.5 * Math.sin((hour - 9.0) / 24.0 * 2.0 * Math.PI)) * (weekend ? 0.35 : 1.0);
+  activity = Math.min(1.0, activity * (0.85 + 0.3 * rnd.nextDouble()));
+  if (spikeLeft <= 0 && rnd.nextInt(900) == 0) { spikeLeft = 3 + rnd.nextInt(8); spikePower = 0.5 + 0.5 * rnd.nextDouble(); }
+  boolean spike = spikeLeft > 0;
+  if (spike) spikeLeft--;
+
+  double proc = 3 + 38 * activity * (0.6 + 0.6 * rnd.nextDouble()) + (spike ? 45 * spikePower : 0);
+  proc = Math.min(98, proc);
+  double sys = Math.min(99, proc + 8 + 6 * rnd.nextDouble());
+  long threads = Math.round(68 + 34 * activity + (spike ? 25 * spikePower : 0) + 3 * rnd.nextGaussian());
+  long sessions = Math.round(1 + 70 * activity * (0.7 + 0.5 * rnd.nextDouble()));
+  long web = Math.round(12 + 10 * activity + (spike ? 20 * spikePower : 0));
+  long busy = Math.min(web, Math.round(1 + 9 * activity * rnd.nextDouble() + (spike ? 15 * spikePower : 0)));
+  long poolActive = Math.min(50, Math.round(0.5 + 9 * activity * rnd.nextDouble() + (spike ? 25 * spikePower : 0)));
+  long poolIdle = Math.max(0, Math.min(50 - poolActive, 12 - poolActive));
+  long waiters = spike && poolActive >= 40 ? Math.round(6 * spikePower) : 0;
+  // heap grows through a cycle and drops when a collection runs
+  long cycle = 29 + (idx / 400) % 7;
+  double growth = (idx % cycle) / (double) cycle;
+  long heapUsed = Math.round(620 + growth * (700 + 900 * activity) + 25 * rnd.nextDouble());
+  boolean gcNow = (idx % cycle) == 0;
+  gcCount += (gcNow ? 3 : 0) + (rnd.nextInt(3) == 0 ? 1 : 0);
+  gcTime += (gcNow ? 80 + 120 * rnd.nextDouble() : 4 * rnd.nextDouble()) * (1 + activity);
+  selects += 20 + 480 * activity * (0.6 + 0.8 * rnd.nextDouble());
+  updates += 1 + 30 * activity * rnd.nextDouble();
+
+  com.mendix.systemwideinterfaces.core.IMendixObject p = com.mendix.core.Core.instantiate(ctx, "ResourceMonitor.ResourcePoint");
+  p.setValue(ctx, "Timestamp", new java.util.Date(t));
+  p.setValue(ctx, "IsDemo", true);
+  p.setValue(ctx, "ProcessCpuPct", dec.apply(proc));
+  p.setValue(ctx, "SystemCpuPct", dec.apply(sys));
+  p.setValue(ctx, "HeapUsedMb", Long.valueOf(heapUsed));
+  p.setValue(ctx, "HeapCommittedMb", Long.valueOf(Math.max(2048L, Math.round(heapUsed * 1.25))));
+  p.setValue(ctx, "HeapMaxMb", Long.valueOf(8192L));
+  p.setValue(ctx, "NonHeapUsedMb", Long.valueOf(Math.round(138 + idx / 20000.0 * 12 + 2 * rnd.nextDouble())));
+  p.setValue(ctx, "Threads", Long.valueOf(threads));
+  p.setValue(ctx, "DeadlockedThreads", Long.valueOf(0L));
+  p.setValue(ctx, "WebThreads", Long.valueOf(web));
+  p.setValue(ctx, "WebIdleThreads", Long.valueOf(Math.max(0, web - busy)));
+  p.setValue(ctx, "WebQueue", Long.valueOf(spike ? Math.round(5 * spikePower * rnd.nextDouble()) : 0L));
+  p.setValue(ctx, "PoolActive", Long.valueOf(poolActive));
+  p.setValue(ctx, "PoolIdle", Long.valueOf(poolIdle));
+  p.setValue(ctx, "PoolWaiters", Long.valueOf(waiters));
+  p.setValue(ctx, "DbPingMs", dec.apply(0.4 + 1.2 * activity * rnd.nextDouble() + (spike ? 6 * spikePower : 0)));
+  p.setValue(ctx, "Sessions", Long.valueOf(sessions));
+  p.setValue(ctx, "GcCountTotal", Long.valueOf(Math.round(gcCount)));
+  p.setValue(ctx, "GcTimeMsTotal", Long.valueOf(Math.round(gcTime)));
+  p.setValue(ctx, "SelectsTotal", Long.valueOf(Math.round(selects)));
+  p.setValue(ctx, "UpdatesTotal", Long.valueOf(Math.round(updates)));
+  batch.add(p);
+  created++;
+  if (batch.size() >= 1000) {
+    com.mendix.core.Core.commit(ctx, batch);
+    batch = new java.util.ArrayList<>();
+  }
+}
+if (!batch.isEmpty()) com.mendix.core.Core.commit(ctx, batch);
+return Long.valueOf(created);
+$$;
